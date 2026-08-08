@@ -4,7 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { useAaveApys } from "@/hooks/useAaveApys";
-import { ArrowUpRight, Lock } from "lucide-react";
+import { ArrowUpRight, Lock, Hourglass, CheckCircle2 } from "lucide-react";
 import { motion } from "framer-motion";
 
 // ── Inline SVG icons (same source as asset-toggle.tsx) ────────────────────────
@@ -33,6 +33,18 @@ const BtcIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+const BaseNetworkIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 1280 1280" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M0,101.12c0-34.64,0-51.95,6.53-65.28,6.25-12.76,16.56-23.07,29.32-29.32C49.17,0,66.48,0,101.12,0h1077.76c34.63,0,51.96,0,65.28,6.53,12.75,6.25,23.06,16.56,29.32,29.32,6.52,13.32,6.52,30.64,6.52,65.28v1077.76c0,34.63,0,51.96-6.52,65.28-6.26,12.75-16.57,23.06-29.32,29.32-13.32,6.52-30.65,6.52-65.28,6.52H101.12c-34.64,0-51.95,0-65.28-6.52-12.76-6.26-23.07-16.57-29.32-29.32-6.53-13.32-6.53-30.65-6.53-65.28V101.12Z"/>
+  </svg>
+);
+
+const MonadNetworkIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 105 105" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M52.0207 0C36.9983 0 0 37.3381 0 52.4997C0 67.6613 36.9983 105 52.0207 105C67.0432 105 104.042 67.6606 104.042 52.4997C104.042 37.3388 67.0438 0 52.0207 0ZM43.9142 82.5208C37.5794 80.7787 20.5477 50.7116 22.2742 44.3184C24.0007 37.9249 53.7929 20.7368 60.1277 22.4792C66.4627 24.2213 83.4944 54.2879 81.7679 60.6813C80.0414 67.0748 50.249 84.2632 43.9142 82.5208Z" />
+  </svg>
+);
+
 const ASSET_ICONS: Record<string, React.FC<{ className?: string }>> = {
   USDC: UsdcIcon,
   ETH: EthIcon,
@@ -51,26 +63,26 @@ interface VaultMeta {
 const VAULTS: VaultMeta[] = [
   {
     id: "usdc",
-    asset: "USD Coin",
+    asset: "USDC Vault",
     ticker: "USDC",
-    riskLabel: "COMPLIANT / LOW RISK",
+    riskLabel: "CVA PASSED",
     network: "Base Sepolia",
     active: true,
   },
   {
     id: "eth",
-    asset: "Ether",
+    asset: "ETH Vault",
     ticker: "ETH",
-    riskLabel: "COMING SOON",
-    network: "Ethereum",
+    riskLabel: "CVA PASSED",
+    network: "Base Sepolia",
     active: false,
   },
   {
     id: "btc",
-    asset: "Bitcoin",
+    asset: "BTC Vault",
     ticker: "BTC",
-    riskLabel: "COMING SOON",
-    network: "Bitcoin",
+    riskLabel: "CVA PASSED",
+    network: "Monad Testnet",
     active: false,
   },
 ];
@@ -84,7 +96,28 @@ function AssetIcon({ ticker }: { ticker: string }) {
   );
 }
 
-function VaultCard({ vault, apy }: { vault: VaultMeta; apy: string }) {
+import { useReadContract } from "wagmi";
+import { parseAbi } from "viem";
+
+const EDICT_PROXY_VAULT_ADDRESS = "0x28E41078B83c7f756f875c834635627Dd9ecCB1D";
+const vaultAbi = parseAbi(["function totalDeposits() external view returns (uint256)"]);
+
+function VaultCard({ vault, apy, usdcDeposits }: { vault: VaultMeta; apy: string; usdcDeposits: number }) {
+  const isUsdc = vault.ticker === "USDC";
+  const CAPACITY = 1000000;
+  const filledAmount = isUsdc ? usdcDeposits : CAPACITY;
+  const filledPercent = Math.min((filledAmount / CAPACITY) * 100, 100).toFixed(1);
+  const availableAmount = Math.max(CAPACITY - filledAmount, 0);
+
+  const availableFormatted = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    notation: "compact",
+    maximumFractionDigits: 1
+  }).format(availableAmount);
+
+  const displayApy = vault.active ? apy : (vault.ticker === "ETH" ? "0.24" : vault.ticker === "BTC" ? "0.08" : "--");
+
   const inner = (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -100,56 +133,68 @@ function VaultCard({ vault, apy }: { vault: VaultMeta; apy: string }) {
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-4">
           <AssetIcon ticker={vault.ticker} />
-          <div>
-            <div className="text-base font-medium text-foreground tracking-tight">
-              {vault.asset}
-            </div>
-            <div className="text-[11px] font-mono text-muted-foreground tracking-wider uppercase mt-0.5">
-              {vault.ticker} Vault
-            </div>
+          <div className="text-base font-medium text-foreground tracking-tight">
+            {vault.asset}
           </div>
         </div>
 
         {vault.active ? (
           <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors mt-1" />
         ) : (
-          <Lock className="w-4 h-4 text-muted-foreground/40 mt-1" />
+          <div className="relative flex items-center justify-center">
+            <Lock className="w-4 h-4 text-muted-foreground/40 mt-1" />
+          </div>
         )}
       </div>
 
-      {/* Risk badge */}
-      <Badge
-        variant="outline"
-        className={`w-fit text-[9px] font-bold tracking-[0.15em] uppercase px-2.5 py-1 rounded-full h-auto ${
-          vault.active
-            ? "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5"
-            : "border-black/10 dark:border-white/10 text-muted-foreground"
-        }`}
-      >
-        {vault.riskLabel}
-      </Badge>
+      {/* Main Metric (APY) */}
+      <div className="flex-1 flex flex-col justify-center py-2">
+        <div className="text-3xl font-mono font-medium text-foreground tracking-tight flex items-baseline gap-1.5">
+          {displayApy}%
+          <span className="text-[11px] tracking-[0.15em] font-sans font-bold text-muted-foreground uppercase">
+            APY
+          </span>
+        </div>
+      </div>
 
-      {/* Divider */}
       <div className="h-px w-full bg-black/5 dark:bg-white/[0.04]" />
 
-      {/* Metrics row */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <div className="text-[10px] font-mono tracking-[0.18em] text-muted-foreground uppercase mb-1.5">
-            Net APY
-          </div>
-          <div className="text-2xl font-mono font-medium text-foreground">
-            {vault.active ? apy : "--"}
-            <span className="text-base text-muted-foreground ml-0.5">%</span>
-          </div>
+      {/* Capacity Progress */}
+      <div className="flex flex-col gap-2 pt-1 group/progress">
+        <div className="flex justify-between items-center text-[11px] font-medium">
+          <span className="text-muted-foreground">Capacity</span>
+          <span className="text-foreground transition-all duration-300">
+            <span className="group-hover/progress:hidden">{isUsdc ? `${filledPercent}% Filled` : `100% Filled`}</span>
+            <span className="hidden group-hover/progress:inline">{availableFormatted} Available</span>
+          </span>
         </div>
-        <div>
-          <div className="text-[10px] font-mono tracking-[0.18em] text-muted-foreground uppercase mb-1.5">
-            Network
-          </div>
-          <div className="text-sm font-medium text-foreground truncate">
-            {vault.network}
-          </div>
+        <div className="h-1.5 w-full bg-black/5 dark:bg-white/10 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-foreground rounded-full transition-all duration-1000 ease-out"
+            style={{ width: isUsdc ? `${filledPercent}%` : `100%` }}
+          />
+        </div>
+      </div>
+
+      {/* Footer Metadata */}
+      <div className="flex items-center justify-between pt-2">
+        <Badge
+          variant="outline"
+          className="text-[10px] font-medium tracking-wide px-2 py-1 rounded-md border-black/10 dark:border-white/10 text-foreground bg-transparent flex items-center gap-1.5 shadow-none"
+        >
+          <CheckCircle2 className="w-3 h-3 text-foreground" />
+          {vault.riskLabel}
+        </Badge>
+
+        <div className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+          {vault.network.includes("Base") ? (
+            <BaseNetworkIcon className="w-3.5 h-3.5 text-foreground/60" />
+          ) : vault.network.includes("Monad") ? (
+            <MonadNetworkIcon className="w-3 h-3 text-foreground/60" />
+          ) : (
+            <div className="w-1.5 h-1.5 rounded-full bg-black/20 dark:bg-white/20" />
+          )}
+          {vault.network === "-" ? "TBA" : vault.network}
         </div>
       </div>
     </motion.div>
@@ -162,6 +207,14 @@ function VaultCard({ vault, apy }: { vault: VaultMeta; apy: string }) {
 export function VaultDirectoryGrid() {
   const { apys, loading } = useAaveApys();
 
+  const { data: totalDepositsData } = useReadContract({
+    address: EDICT_PROXY_VAULT_ADDRESS as `0x${string}`,
+    abi: vaultAbi,
+    functionName: "totalDeposits",
+  });
+  
+  const usdcDeposits = totalDepositsData !== undefined ? Number(totalDepositsData) / 10 ** 6 : 0;
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
       {VAULTS.map((vault) => (
@@ -169,6 +222,7 @@ export function VaultDirectoryGrid() {
           key={vault.id}
           vault={vault}
           apy={loading ? "--" : apys[vault.ticker as keyof typeof apys] ?? "--"}
+          usdcDeposits={usdcDeposits}
         />
       ))}
     </div>

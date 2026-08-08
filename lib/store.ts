@@ -27,11 +27,21 @@ export interface AttestationData {
   deposited: { amount: number; protocol: string }[];
 }
 
+export interface TxRecord {
+  hash: string;
+  type: "Deposit" | "Withdraw";
+  amount: string;
+  status: "pending" | "confirmed";
+  ts: Date;
+}
+
 export interface AssetPool {
   globalTvl: number;
   totalDeposited: number;
   protocols: Protocol[];
+  simulationProtocols: Protocol[] | null;
   logs: LogEntry[];
+  idleVaultCapital: number;
 }
 
 export interface EdictStore {
@@ -58,6 +68,8 @@ export interface EdictStore {
   triggerViolation: (protocolId: string) => void;
   resetProtocols: () => void;
   setProtocols: (protocols: Protocol[]) => void;
+  setSimulationProtocols: (protocols: Protocol[] | null) => void;
+  setIdleVaultCapital: (amount: number) => void;
   addLog: (entry: Omit<LogEntry, "id" | "timestamp">) => void;
   clearLogs: () => void;
 
@@ -72,13 +84,18 @@ export interface EdictStore {
   attestationData: AttestationData | null;
   setAttestation: (data: AttestationData) => void;
   dismissAttestation: () => void;
+
+  // Transactions
+  transactions: TxRecord[];
+  addTransaction: (tx: TxRecord) => void;
+  updateTransactionStatus: (hash: string, status: "pending" | "confirmed") => void;
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
 const INITIAL_PROTOCOLS: Protocol[] = PROTOCOLS.map((p) => ({
   ...p,
-  allocation: 33.33,
+  allocation: p.id === "aave" ? 100 : 0,
   amount: 0,
   status: "compliant",
 }));
@@ -87,7 +104,9 @@ const INITIAL_POOL: AssetPool = {
   globalTvl: 0,
   totalDeposited: 0,
   protocols: [...INITIAL_PROTOCOLS],
+  simulationProtocols: null,
   logs: [],
+  idleVaultCapital: 0,
 };
 
 export const useStore = create<EdictStore>((set, get) => ({
@@ -108,6 +127,19 @@ export const useStore = create<EdictStore>((set, get) => ({
   activeTab: "USDC",
   setActiveTab: (tab) => set({ activeTab: tab }),
 
+  transactions: [],
+  addTransaction: (tx) =>
+    set((state) => {
+      if (state.transactions.some((t) => t.hash === tx.hash)) return state;
+      return { transactions: [tx, ...state.transactions].slice(0, 50) };
+    }),
+  updateTransactionStatus: (hash, status) =>
+    set((state) => ({
+      transactions: state.transactions.map((t) =>
+        t.hash === hash ? { ...t, status } : t
+      ),
+    })),
+
   pools: {
     USDC: { ...JSON.parse(JSON.stringify(INITIAL_POOL)), globalTvl: 0 },
     ETH: { ...JSON.parse(JSON.stringify(INITIAL_POOL)), globalTvl: 0 },
@@ -119,19 +151,11 @@ export const useStore = create<EdictStore>((set, get) => ({
       const activeTab = state.activeTab;
       const pool = state.pools[activeTab];
       const newTotal = pool.totalDeposited + amount;
-      const compliantCount = pool.protocols.filter(
-        (p) => p.status === "compliant"
-      ).length;
-
       const finalProtocols = pool.protocols.map((p) => {
-        if (p.status === "compliant") {
-          return {
-            ...p,
-            amount: newTotal / compliantCount,
-            allocation: 100 / compliantCount,
-          };
-        }
-        return { ...p, amount: 0, allocation: 0 };
+        return {
+          ...p,
+          amount: newTotal * (p.allocation / 100),
+        };
       });
 
       return {
@@ -167,18 +191,22 @@ export const useStore = create<EdictStore>((set, get) => ({
     set((state) => {
       const activeTab = state.activeTab;
       const pool = state.pools[activeTab];
-      const perProtocol = pool.totalDeposited / 3;
       return {
         pools: {
           ...state.pools,
           [activeTab]: {
             ...pool,
-            protocols: pool.protocols.map((p) => ({
-              ...p,
-              status: "compliant",
-              amount: perProtocol,
-              allocation: 33.33,
-            })),
+            simulationProtocols: null,
+            idleVaultCapital: 0,
+            protocols: pool.protocols.map((p) => {
+              const alloc = p.id === "aave" ? 100 : 0;
+              return {
+                ...p,
+                status: "compliant",
+                amount: pool.totalDeposited * (alloc / 100),
+                allocation: alloc,
+              };
+            }),
           },
         },
         showAttestation: false,
@@ -194,6 +222,34 @@ export const useStore = create<EdictStore>((set, get) => ({
           [activeTab]: {
             ...state.pools[activeTab],
             protocols,
+          },
+        },
+      };
+    }),
+
+  setSimulationProtocols: (protocols) =>
+    set((state) => {
+      const activeTab = state.activeTab;
+      return {
+        pools: {
+          ...state.pools,
+          [activeTab]: {
+            ...state.pools[activeTab],
+            simulationProtocols: protocols,
+          },
+        },
+      };
+    }),
+
+  setIdleVaultCapital: (amount) =>
+    set((state) => {
+      const activeTab = state.activeTab;
+      return {
+        pools: {
+          ...state.pools,
+          [activeTab]: {
+            ...state.pools[activeTab],
+            idleVaultCapital: amount,
           },
         },
       };
@@ -229,7 +285,7 @@ export const useStore = create<EdictStore>((set, get) => ({
       };
     }),
 
-  agentSpeed: 2000,
+  agentSpeed: 5000,
   setAgentSpeed: (ms) => set({ agentSpeed: ms }),
   isAgentRunning: false,
   setIsAgentRunning: (running) => set({ isAgentRunning: running }),

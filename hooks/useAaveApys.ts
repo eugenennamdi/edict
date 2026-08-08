@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 
 export function useAaveApys() {
   // Hardcoded to match Aave V3 Base Sepolia testnet rates exactly
-  const [apys, setApys] = useState({ USDC: "0.44", ETH: "1.21", BTC: "0.00" });
+  const [apys, setApys] = useState({ USDC: "1.46", ETH: "1.21", BTC: "0.00" });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

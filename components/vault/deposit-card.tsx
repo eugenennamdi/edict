@@ -30,8 +30,8 @@ import { toast } from "sonner";
 import { erc20Abi } from "viem";
 import { useAaveApys } from "@/hooks/useAaveApys";
 
-const EDICT_PROXY_VAULT_ADDRESS = "0xE9E6792401d53009d6768ba0A03b5Db6a71032D4";
-const TESTNET_USDC_ADDRESS = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+const EDICT_PROXY_VAULT_ADDRESS = "0x28E41078B83c7f756f875c834635627Dd9ecCB1D";
+const TESTNET_USDC_ADDRESS = "0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f";
 const vaultAbi = parseAbi(["function deposit(uint256 amount) external"]);
 
 export function DepositCard() {
@@ -81,10 +81,15 @@ export function DepositCard() {
   const displayBalance =
     activeTab === "USDC" ? usdcBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "--";
 
+  const lastDepositAmount = React.useRef(depositAmount);
+  React.useEffect(() => {
+    lastDepositAmount.current = depositAmount;
+  }, [depositAmount]);
+
   React.useEffect(() => {
     if (isDepositConfirmed) {
       toast.success("Deposit successful", {
-        description: `Successfully deposited ${depositAmount} ${activeTab}`,
+        description: `Successfully deposited ${lastDepositAmount.current} ${activeTab}`,
       });
       setDepositAmount("");
     }
@@ -285,8 +290,7 @@ export function DepositCard() {
           <AlertDialogHeader className="mb-2 text-left place-items-start sm:place-items-start sm:text-left">
             <AlertDialogTitle className="text-xl tracking-tight">Identity Verification Required</AlertDialogTitle>
             <AlertDialogDescription className="text-base mt-2">
-              You must verify your identity before making a deposit. This
-              process only takes a few moments.
+              Your connected address must hold a valid CVI (Verified Identity) attestation to execute vault deposits.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex flex-col gap-6 mt-6">

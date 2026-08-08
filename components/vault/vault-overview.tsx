@@ -7,7 +7,7 @@ import { useReadContract } from "wagmi";
 import { parseAbi } from "viem";
 import { useAaveApys } from "@/hooks/useAaveApys";
 
-const EDICT_PROXY_VAULT_ADDRESS = "0xE9E6792401d53009d6768ba0A03b5Db6a71032D4";
+const EDICT_PROXY_VAULT_ADDRESS = "0x28E41078B83c7f756f875c834635627Dd9ecCB1D";
 const vaultAbi = parseAbi(["function totalDeposits() external view returns (uint256)"]);
 
 export function VaultOverview() {
@@ -30,6 +30,23 @@ export function VaultOverview() {
 
   const deposits = formatCompactCurrency(globalTvl);
   const liquidity = formatCompactCurrency(globalTvl * 0.277); // 27.7% liquidity simulation
+
+  const isUsdc = activeTab === "USDC";
+  const CAPACITY = 1000000;
+  const filledAmount = isUsdc ? globalTvl : CAPACITY;
+  const filledPercent = Math.min((filledAmount / CAPACITY) * 100, 100).toFixed(1);
+  const availableAmount = Math.max(CAPACITY - filledAmount, 0);
+
+  const availableFormatted = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    notation: "compact",
+    maximumFractionDigits: 1
+  }).format(availableAmount);
+
+  const displayApy = isUsdc 
+    ? (apysLoading ? null : apys.USDC) 
+    : (activeTab === "ETH" ? "0.24" : "0.08");
 
   return (
     <div className="w-full animate-fade-up" style={{ animationDelay: "100ms" }}>
@@ -64,12 +81,29 @@ export function VaultOverview() {
           </div>
           <div className="flex items-baseline tracking-tight font-mono h-9">
             <span className="text-3xl text-foreground/90 font-medium">
-              {apysLoading ? <span className="animate-pulse">--</span> : apys[activeTab as keyof typeof apys]}
+              {displayApy ?? <span className="animate-pulse">--</span>}
             </span>
             <span className="text-3xl text-muted-foreground font-medium ml-1">%</span>
           </div>
         </div>
 
+      </div>
+
+      {/* Capacity Progress Bar */}
+      <div className="mt-6 bg-card border border-black/5 dark:border-white/[0.03] rounded-[1.5rem] p-6 shadow-sm group/progress">
+        <div className="flex justify-between items-center mb-3 text-sm font-medium">
+          <span className="text-muted-foreground tracking-tight">Vault Capacity</span>
+          <span className="text-foreground transition-all duration-300 font-mono">
+            <span className="group-hover/progress:hidden">{isUsdc ? `${filledPercent}% Filled` : `100% Filled`}</span>
+            <span className="hidden group-hover/progress:inline">{availableFormatted} Available</span>
+          </span>
+        </div>
+        <div className="h-2.5 w-full bg-black/5 dark:bg-white/10 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-foreground rounded-full transition-all duration-1000 ease-out"
+            style={{ width: isUsdc ? `${filledPercent}%` : `100%` }}
+          />
+        </div>
       </div>
     </div>
   );

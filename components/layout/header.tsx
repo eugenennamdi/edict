@@ -88,7 +88,7 @@ export function Header() {
               </Link>
               <div className="relative group flex items-center justify-center h-full cursor-not-allowed">
                 <span className="text-sm font-medium text-muted-foreground transition-colors group-hover:text-foreground">
-                  Governance
+                  Borrow
                 </span>
                 
                 {/* Sleek top tooltip */}
@@ -103,6 +103,16 @@ export function Header() {
                   </div>
                 </div>
               </div>
+              <Link 
+                href="/governance" 
+                className={`text-sm font-medium transition-all relative ${
+                  pathname === "/governance" 
+                    ? "text-foreground drop-shadow-sm" 
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Governance
+              </Link>
             </nav>
           </div>
         </div>
@@ -113,41 +123,38 @@ export function Header() {
             <Popover>
               <PopoverTrigger className="flex items-center gap-2.5 pl-1.5 pr-4 py-1.5 bg-white/70 dark:bg-[#0A0A0A]/70 rounded-full border border-white/20 dark:border-white/10 shadow-lg shadow-black/5 backdrop-blur-xl hover:bg-white/90 dark:hover:bg-[#0A0A0A]/90 transition-colors">
                 <Avatar className="w-6 h-6 border border-black/10 dark:border-white/10">
-                  <AvatarFallback className="bg-purple-600">
-                    <div className="w-full h-full opacity-50 flex flex-wrap gap-[1px] p-1">
-                      <div className="w-[45%] h-[45%] bg-white rounded-sm" />
-                      <div className="w-[45%] h-[45%] bg-white rounded-sm" />
-                      <div className="w-[45%] h-[45%] bg-white rounded-sm" />
-                      <div className="w-[45%] h-[45%] bg-white rounded-sm" />
+                  <AvatarFallback className="bg-foreground">
+                    <div className="w-full h-full opacity-70 flex flex-wrap gap-[1px] p-1">
+                      <div className="w-[45%] h-[45%] bg-background rounded-sm" />
+                      <div className="w-[45%] h-[45%] bg-background rounded-sm" />
+                      <div className="w-[45%] h-[45%] bg-background rounded-sm" />
+                      <div className="w-[45%] h-[45%] bg-background rounded-sm" />
                     </div>
                   </AvatarFallback>
                 </Avatar>
                 <span className="text-sm font-medium text-foreground">{truncateAddress(address)}</span>
               </PopoverTrigger>
-              <PopoverContent align="end" className="w-[300px] p-5 rounded-2xl shadow-xl border-black/5 dark:border-white/[0.03] space-y-5 bg-card/95 backdrop-blur-xl">
+              <PopoverContent align="end" className="w-[250px] p-4 rounded-[1.25rem] shadow-xl border-black/5 dark:border-white/[0.03] space-y-4 bg-card/95 backdrop-blur-xl">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="w-6 h-6 border border-black/10 dark:border-white/10">
-                      <AvatarFallback className="bg-purple-600">
-                        <div className="w-full h-full opacity-50 flex flex-wrap gap-[1px] p-1">
-                          <div className="w-[45%] h-[45%] bg-white rounded-sm" />
-                          <div className="w-[45%] h-[45%] bg-white rounded-sm" />
-                          <div className="w-[45%] h-[45%] bg-white rounded-sm" />
-                          <div className="w-[45%] h-[45%] bg-white rounded-sm" />
+                  <div className="flex items-center gap-2.5">
+                    <Avatar className="w-5 h-5 border border-black/10 dark:border-white/10">
+                      <AvatarFallback className="bg-foreground">
+                        <div className="w-full h-full opacity-70 flex flex-wrap gap-[1px] p-0.5">
+                          <div className="w-[45%] h-[45%] bg-background rounded-[1px]" />
+                          <div className="w-[45%] h-[45%] bg-background rounded-[1px]" />
+                          <div className="w-[45%] h-[45%] bg-background rounded-[1px]" />
+                          <div className="w-[45%] h-[45%] bg-background rounded-[1px]" />
                         </div>
                       </AvatarFallback>
                     </Avatar>
-                    <span className="text-[15px] font-medium text-foreground">{truncateAddress(address)}</span>
-                    <button onClick={handleCopy} className="text-muted-foreground hover:text-foreground transition-colors ml-1">
-                      <Copy className="w-[15px] h-[15px]" />
+                    <span className="text-[14px] font-medium text-foreground">{truncateAddress(address)}</span>
+                    <button onClick={handleCopy} className="text-muted-foreground hover:text-foreground transition-colors">
+                      <Copy className="w-[14px] h-[14px]" />
                     </button>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <button className="text-muted-foreground hover:text-foreground transition-colors">
-                      <ExternalLink className="w-[18px] h-[18px]" />
-                    </button>
-                    <button onClick={logout} className="text-muted-foreground hover:text-foreground transition-colors">
-                      <Power className="w-[18px] h-[18px]" />
+                  <div className="flex items-center">
+                    <button onClick={logout} className="text-muted-foreground hover:text-foreground transition-colors p-1.5 -mr-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/5">
+                      <Power className="w-[15px] h-[15px]" />
                     </button>
                   </div>
                 </div>
@@ -155,25 +162,25 @@ export function Header() {
                 <div className="h-px w-full bg-black/5 dark:bg-white/[0.05]" />
                 
                 <div className="flex items-center justify-between">
-                  <span className="text-[15px] font-medium text-foreground">Theme</span>
-                  <div className="flex items-center p-1 bg-black/5 dark:bg-white/[0.05] rounded-[14px]">
+                  <span className="text-[14px] font-medium text-foreground">Theme</span>
+                  <div className="flex items-center p-0.5 bg-black/5 dark:bg-white/[0.05] rounded-[10px]">
                     <button 
                       onClick={() => setTheme("dark")}
-                      className={`p-2 rounded-[10px] transition-all ${theme === 'dark' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                      className={`p-1.5 rounded-[8px] transition-all ${theme === 'dark' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                     >
-                      <Moon className="w-4 h-4" />
+                      <Moon className="w-[14px] h-[14px]" />
                     </button>
                     <button 
                       onClick={() => setTheme("light")}
-                      className={`p-2 rounded-[10px] transition-all ${theme === 'light' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                      className={`p-1.5 rounded-[8px] transition-all ${theme === 'light' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                     >
-                      <Sun className="w-4 h-4" />
+                      <Sun className="w-[14px] h-[14px]" />
                     </button>
                     <button 
                       onClick={() => setTheme("system")}
-                      className={`p-2 rounded-[10px] transition-all ${theme === 'system' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                      className={`p-1.5 rounded-[8px] transition-all ${theme === 'system' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                     >
-                      <Monitor className="w-4 h-4" />
+                      <Monitor className="w-[14px] h-[14px]" />
                     </button>
                   </div>
                 </div>

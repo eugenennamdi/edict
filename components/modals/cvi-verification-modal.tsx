@@ -123,7 +123,7 @@ export function CviVerificationModal({ amount, onComplete }: { amount: string, o
                 )}
               </div>
               <span className={`font-medium ${step >= 1 ? 'text-foreground/90' : 'text-muted-foreground'}`}>
-                Identity verified
+                CVI Identity Verification
               </span>
             </div>
 
@@ -137,7 +137,7 @@ export function CviVerificationModal({ amount, onComplete }: { amount: string, o
                 )}
               </div>
               <span className={`font-medium ${step >= 2 ? 'text-foreground/90' : 'text-muted-foreground'}`}>
-                Sanctions screening passed
+                Jurisdiction & Country Screening
               </span>
             </div>
 
@@ -151,7 +151,7 @@ export function CviVerificationModal({ amount, onComplete }: { amount: string, o
                 )}
               </div>
               <span className={`font-medium ${step >= 3 ? 'text-foreground/90' : 'text-muted-foreground'}`}>
-                Accreditation confirmed
+                A-Pass Policy Qualification
               </span>
             </div>
           </div>

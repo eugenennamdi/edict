@@ -5,7 +5,15 @@ import { formatCurrency } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Bot } from "lucide-react";
+import { Bot, RefreshCw } from "lucide-react";
+import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
+import { useReadContract } from "wagmi";
+import { parseAbi } from "viem";
+
+const EDICT_PROXY_VAULT_ADDRESS = "0x28E41078B83c7f756f875c834635627Dd9ecCB1D";
+const vaultAbi = parseAbi([
+  "function totalDeposits() external view returns (uint256)"
+]);
 
 const UsdcIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 32 32" fill="currentColor">
@@ -35,9 +43,20 @@ const BtcIcon = ({ className }: { className?: string }) => (
 export function RiskMetrics() {
   const activeTab = useStore((state) => state.activeTab);
   const setActiveTab = useStore((state) => state.setActiveTab);
-  const globalTvl = useStore((state) => state.pools[activeTab].globalTvl);
+  const storeGlobalTvl = useStore((state) => state.pools[activeTab].globalTvl);
   const protocols = useStore((state) => state.pools[activeTab].protocols);
   
+  const { data: totalDepositsData } = useReadContract({
+    address: EDICT_PROXY_VAULT_ADDRESS as `0x${string}`,
+    abi: vaultAbi,
+    functionName: "totalDeposits",
+    query: { enabled: activeTab === "USDC" },
+  });
+
+  const globalTvl = activeTab === "USDC"
+    ? (totalDepositsData !== undefined ? Number(totalDepositsData) / 1e6 : 0)
+    : storeGlobalTvl;
+
   const hasViolation = protocols.some(p => p.status === "violation");
   const isRebalancing = protocols.some(p => p.status === "rebalancing");
   
@@ -135,7 +154,21 @@ export function RiskMetrics() {
         <div className="px-6 py-5 md:p-6 flex flex-col h-full justify-between gap-4">
           <div className="text-[11px] font-mono tracking-[0.1em] text-muted-foreground uppercase flex items-center justify-between">
             SYNC STATUS
-            <div className={`w-2 h-2 rounded-full transition-colors duration-500 ${tick ? 'bg-foreground/50' : 'bg-muted'}`} />
+            <HoverCard>
+              <HoverCardTrigger render={
+                <div className="flex cursor-default">
+                  <RefreshCw className="w-3.5 h-3.5 text-muted-foreground/70 animate-spin" style={{ animationDuration: '3s' }} />
+                </div>
+              } />
+              <HoverCardContent align="end" className="flex w-64 flex-col gap-3 p-4 text-left text-sm">
+                <div className="flex flex-col gap-1">
+                  <div className="font-semibold text-foreground">Live Telemetry</div>
+                  <div className="text-foreground/90 leading-relaxed">
+                    System is actively syncing with the Cleanverse API for high-frequency compliance verification.
+                  </div>
+                </div>
+              </HoverCardContent>
+            </HoverCard>
           </div>
           <div className="flex flex-col gap-1">
             <div className="text-2xl font-sans tracking-tight font-medium text-foreground">

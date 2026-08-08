@@ -2,8 +2,8 @@
 
 import { VaultDetailHeader } from "./vault-detail-header";
 import { AllocationTable } from "./allocation-table";
-import { WatcherTerminal } from "./watcher-terminal";
 import { VaultActionPanel } from "./vault-action-panel";
+import { DepositChart } from "@/components/vault/deposit-chart";
 
 interface VaultDetailViewProps {
   vaultId: string;
@@ -21,8 +21,8 @@ export function VaultDetailView({ vaultId }: VaultDetailViewProps) {
         {/* ── LEFT COLUMN ── */}
         <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-6">
           <VaultDetailHeader vaultId={vaultId} isActive={isActive} />
+          {isActive && <DepositChart />}
           <AllocationTable isActive={isActive} />
-          <WatcherTerminal isActive={isActive} />
         </div>
 
         {/* ── RIGHT COLUMN ── */}

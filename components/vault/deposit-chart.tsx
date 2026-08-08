@@ -3,6 +3,8 @@
 import * as React from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { useStore } from "@/lib/store";
+import { useReadContract } from "wagmi";
+import { parseAbi } from "viem";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   Select,
@@ -24,44 +26,77 @@ function formatValue(value: number) {
   return value.toFixed(2);
 }
 
-function generateChartData(baseTvl: number, days: number) {
+
+function generateChartData(baseTvl: number, days: number, transactions: any[] = []) {
   const data = [];
-  let currentTvl = baseTvl * (1 - (days / 365) * 0.4); 
-  
   const pointsPerDay = days === 7 ? 4 : 1; 
   const totalDaysToGoBack = days === 365 ? 364 : days - 1;
   const totalPoints = totalDaysToGoBack * pointsPerDay;
   
-  for (let i = totalPoints; i >= 0; i--) {
-    const date = new Date();
-    date.setHours(date.getHours() - (i * (24 / pointsPerDay)));
+  const now = new Date();
+  
+  let mockWiggle = 0;
+  for (let i = 0; i <= totalPoints; i++) {
+    const date = new Date(now.getTime() - (i * (24 * 60 * 60 * 1000) / pointsPerDay));
     
-    const volatility = days > 90 ? 0.08 : 0.03;
-    const changeFactor = (Math.random() * volatility - (volatility * 0.2)) / pointsPerDay;
-    const dailyChange = baseTvl * changeFactor;
-    currentTvl = Math.max(0, currentTvl + dailyChange);
+    let realOffset = 0;
+    for (const tx of transactions) {
+      if (tx.status === 'confirmed') {
+        const txDate = new Date(tx.timestamp || tx.ts);
+        if (txDate > date) {
+          const amount = parseFloat(tx.amount) || 0;
+          if (tx.type.toLowerCase() === 'deposit') {
+            realOffset -= amount;
+          } else if (tx.type.toLowerCase() === 'withdraw') {
+            realOffset += amount;
+          }
+        }
+      }
+    }
     
-    if (i === 0) {
-      currentTvl = baseTvl;
+    if (i > 0) {
+      const pseudoRandom = Math.sin(i * 87.331) * Math.cos(i * 12.987);
+      const volatility = days > 90 ? 0.05 : 0.02;
+      const change = baseTvl * volatility * pseudoRandom / pointsPerDay;
+      const drift = (baseTvl * 0.4) / totalPoints; 
+      mockWiggle -= change + drift; 
     }
     
     data.push({
       timestamp: date.getTime(),
-      value: currentTvl,
+      value: Math.max(0, baseTvl + realOffset + mockWiggle),
     });
   }
-  return data;
+  
+  return data.reverse();
 }
+
+const EDICT_PROXY_VAULT_ADDRESS = "0x28E41078B83c7f756f875c834635627Dd9ecCB1D";
+const vaultAbi = parseAbi([
+  "function totalDeposits() external view returns (uint256)"
+]);
 
 export function DepositChart() {
   const activeTab = useStore((state) => state.activeTab);
-  const globalTvl = useStore((state) => state.pools[activeTab].globalTvl);
+  const storeGlobalTvl = useStore((state) => state.pools[activeTab].globalTvl);
+  const transactions = useStore((state) => state.transactions);
+  
+  const { data: totalDepositsData } = useReadContract({
+    address: EDICT_PROXY_VAULT_ADDRESS as `0x${string}`,
+    abi: vaultAbi,
+    functionName: "totalDeposits",
+    query: { enabled: activeTab === "USDC" },
+  });
+  
+  const globalTvl = activeTab === "USDC" 
+    ? (totalDepositsData !== undefined ? Number(totalDepositsData) / 1e6 : 0)
+    : storeGlobalTvl;
   
   const [timeRange, setTimeRange] = React.useState("30");
 
   const chartData = React.useMemo(() => {
-    return generateChartData(globalTvl, parseInt(timeRange));
-  }, [globalTvl, timeRange]);
+    return generateChartData(globalTvl, parseInt(timeRange), transactions);
+  }, [globalTvl, timeRange, transactions]);
 
   const chartConfig = {
     value: {
@@ -74,7 +109,7 @@ export function DepositChart() {
     <Card className="w-full bg-card border-black/5 dark:border-white/[0.03] shadow-2xl rounded-[1.5rem] overflow-hidden">
       <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-6 md:p-8 pb-4">
         <div>
-          <CardTitle className="text-xl font-medium tracking-tight">Total Deposits ({activeTab})</CardTitle>
+          <CardTitle className="text-lg font-medium">Vault Performance</CardTitle>
         </div>
         <div className="flex items-center gap-1">
           {[

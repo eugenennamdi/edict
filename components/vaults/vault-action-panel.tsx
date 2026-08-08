@@ -9,6 +9,7 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi";
+import { useQueryClient } from "@tanstack/react-query";
 import { parseAbi, erc20Abi } from "viem";
 import { useStore } from "@/lib/store";
 import { useAaveApys } from "@/hooks/useAaveApys";
@@ -29,21 +30,23 @@ import {
 import { toast } from "sonner";
 import { ExternalLink, ArrowDownToLine, ArrowUpFromLine, Clock, CheckCircle2, Loader2 } from "lucide-react";
 
-const EDICT_PROXY_VAULT_ADDRESS = "0xE9E6792401d53009d6768ba0A03b5Db6a71032D4";
-const TESTNET_USDC_ADDRESS = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+const EDICT_PROXY_VAULT_ADDRESS = "0x28E41078B83c7f756f875c834635627Dd9ecCB1D";
+const TESTNET_USDC_ADDRESS = "0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f";
 const BASESCAN_TX_URL = "https://sepolia.basescan.org/tx/";
 
-const vaultAbi = parseAbi(["function deposit(uint256 amount) external"]);
+const vaultAbi = parseAbi([
+  "function deposit(uint256 amount) external",
+  "function withdraw(uint256 amount) external",
+  "function userDeposits(address user) view returns (uint256)"
+]);
+
+const BaseNetworkIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 1280 1280" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M0,101.12c0-34.64,0-51.95,6.53-65.28,6.25-12.76,16.56-23.07,29.32-29.32C49.17,0,66.48,0,101.12,0h1077.76c34.63,0,51.96,0,65.28,6.53,12.75,6.25,23.06,16.56,29.32,29.32,6.52,13.32,6.52,30.64,6.52,65.28v1077.76c0,34.63,0,51.96-6.52,65.28-6.26,12.75-16.57,23.06-29.32,29.32-13.32,6.52-30.65,6.52-65.28,6.52H101.12c-34.64,0-51.95,0-65.28-6.52-12.76-6.26-23.07-16.57-29.32-29.32-6.53-13.32-6.53-30.65-6.53-65.28V101.12Z"/>
+  </svg>
+);
 
 type TabId = "deposit" | "withdraw";
-
-interface TxRecord {
-  hash: string;
-  type: "Deposit" | "Withdraw";
-  amount: string;
-  status: "pending" | "confirmed";
-  ts: Date;
-}
 
 function truncateHash(hash: string) {
   return `${hash.slice(0, 8)}…${hash.slice(-6)}`;
@@ -54,12 +57,18 @@ interface VaultActionPanelProps {
 }
 
 export function VaultActionPanel({ isActive }: VaultActionPanelProps) {
+  const depositInputId = React.useId();
+  const withdrawInputId = React.useId();
   const [activeTab, setActiveTab] = React.useState<TabId>("deposit");
   const [depositAmount, setDepositAmount] = React.useState("");
+  const [withdrawAmount, setWithdrawAmount] = React.useState("");
   const [isAlertOpen, setIsAlertOpen] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
-  const [txRecords, setTxRecords] = React.useState<TxRecord[]>([]);
+  const transactions = useStore((s) => s.transactions);
+  const addTransaction = useStore((s) => s.addTransaction);
+  const updateTransactionStatus = useStore((s) => s.updateTransactionStatus);
 
+  const queryClient = useQueryClient();
   const { ready, authenticated, login } = usePrivy();
   const { address } = useAccount();
   const isConnected = ready && authenticated;
@@ -91,7 +100,17 @@ export function VaultActionPanel({ isActive }: VaultActionPanelProps) {
     isError: isDepositConfirmError, error: depositConfirmError,
   } = useWaitForTransactionReceipt({ hash: depositHash });
 
-  // ── USDC balance ─────────────────────────────────────────────────────────
+  const {
+    data: withdrawHash, isPending: isWithdrawPending,
+    writeContract: writeWithdraw, isError: isWithdrawError, error: withdrawError,
+  } = useWriteContract();
+
+  const {
+    isLoading: isWithdrawConfirming, isSuccess: isWithdrawConfirmed,
+    isError: isWithdrawConfirmError, error: withdrawConfirmError,
+  } = useWaitForTransactionReceipt({ hash: withdrawHash });
+
+  // ── Balances ─────────────────────────────────────────────────────────────
   const { data: usdcBalanceData } = useReadContract({
     address: TESTNET_USDC_ADDRESS as `0x${string}`,
     abi: erc20Abi,
@@ -100,6 +119,15 @@ export function VaultActionPanel({ isActive }: VaultActionPanelProps) {
     query: { enabled: !!address && isActive },
   });
   const usdcBalance = usdcBalanceData ? Number(usdcBalanceData) / 1e6 : 0;
+
+  const { data: userDepositsData } = useReadContract({
+    address: EDICT_PROXY_VAULT_ADDRESS as `0x${string}`,
+    abi: vaultAbi,
+    functionName: "userDeposits",
+    args: address ? [address as `0x${string}`] : undefined,
+    query: { enabled: !!address && isActive },
+  });
+  const userDeposits = userDepositsData ? Number(userDepositsData) / 1e6 : 0;
 
   // ── Side-effects ─────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -116,58 +144,98 @@ export function VaultActionPanel({ isActive }: VaultActionPanelProps) {
   React.useEffect(() => {
     if (isDepositConfirmed && depositHash) {
       toast.success("Deposit confirmed");
-      setTxRecords((prev) =>
-        prev.map((r) =>
-          r.hash === depositHash ? { ...r, status: "confirmed" } : r
-        )
-      );
-      setDepositAmount("");
+      updateTransactionStatus(depositHash, "confirmed");
+      queryClient.invalidateQueries();
     }
-  }, [isDepositConfirmed, depositHash]);
+  }, [isDepositConfirmed, depositHash, updateTransactionStatus, queryClient]);
 
   // Track pending deposit tx
   React.useEffect(() => {
     if (depositHash) {
-      setTxRecords((prev) => {
-        if (prev.some((r) => r.hash === depositHash)) return prev;
-        return [
-          { hash: depositHash, type: "Deposit" as const, amount: depositAmount, status: "pending" as const, ts: new Date() },
-          ...prev,
-        ].slice(0, 10);
+      addTransaction({
+        hash: depositHash,
+        type: "Deposit",
+        amount: depositAmount,
+        status: "pending",
+        ts: new Date(),
       });
+      // state reset moved to submit handler
     }
-  }, [depositHash]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [depositHash, addTransaction]); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     if (isApproveError && approveError) toast.error("Approval failed", { description: approveError.message.slice(0, 100) });
     if (isDepositError && depositError) toast.error("Deposit failed", { description: depositError.message.slice(0, 100) });
-  }, [isApproveError, approveError, isDepositError, depositError]);
+    if (isWithdrawError && withdrawError) toast.error("Withdrawal failed", { description: withdrawError.message.slice(0, 100) });
+  }, [isApproveError, approveError, isDepositError, depositError, isWithdrawError, withdrawError]);
 
   React.useEffect(() => {
     if (isApproveConfirmError && approveConfirmError) toast.error("Approval reverted");
     if (isDepositConfirmError && depositConfirmError) toast.error("Deposit reverted");
-  }, [isApproveConfirmError, approveConfirmError, isDepositConfirmError, depositConfirmError]);
+    if (isWithdrawConfirmError && withdrawConfirmError) toast.error("Withdrawal reverted");
+  }, [isApproveConfirmError, approveConfirmError, isDepositConfirmError, depositConfirmError, isWithdrawConfirmError, withdrawConfirmError]);
+
+  React.useEffect(() => {
+    if (isWithdrawConfirmed && withdrawHash) {
+      toast.success("Withdrawal confirmed");
+      updateTransactionStatus(withdrawHash, "confirmed");
+      queryClient.invalidateQueries();
+    }
+  }, [isWithdrawConfirmed, withdrawHash, updateTransactionStatus, queryClient]);
+
+  // Track pending withdraw tx
+  React.useEffect(() => {
+    if (withdrawHash) {
+      addTransaction({
+        hash: withdrawHash,
+        type: "Withdraw",
+        amount: withdrawAmount,
+        status: "pending",
+        ts: new Date(),
+      });
+      // state reset moved to submit handler
+    }
+  }, [withdrawHash, addTransaction]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-  const isBusy = isApprovePending || isApproveConfirming || isDepositPending || isDepositConfirming;
+  const isBusy = isApprovePending || isApproveConfirming || isDepositPending || isDepositConfirming || isWithdrawPending || isWithdrawConfirming;
 
   const getButtonText = () => {
     if (!mounted || !isConnected) return "Connect Wallet";
     if (!isActive) return "Market Closed";
-    if (!depositAmount || Number(depositAmount) <= 0) return "Enter an amount";
-    if (isApprovePending || isApproveConfirming) return "Approving USDC…";
-    if (isDepositPending || isDepositConfirming) return "Confirming Deposit…";
-    return "Review Deposit";
+    
+    if (activeTab === "deposit") {
+      if (!depositAmount || Number(depositAmount) <= 0) return "Enter an amount";
+      if (Number(depositAmount) > usdcBalance) return "Insufficient USDC";
+      if (isApprovePending || isApproveConfirming) return "Approving USDC…";
+      if (isDepositPending || isDepositConfirming) return "Confirming Deposit…";
+      return "Review Deposit";
+    } else {
+      if (!withdrawAmount || Number(withdrawAmount) <= 0) return "Enter an amount";
+      if (Number(withdrawAmount) > userDeposits) return "Insufficient balance";
+      if (isWithdrawPending || isWithdrawConfirming) return "Confirming Withdrawal…";
+      return "Review Withdrawal";
+    }
   };
 
   const isButtonDisabled =
     isConnected &&
-    (!isActive || !depositAmount || Number(depositAmount) <= 0 || isBusy);
+    (!isActive || isBusy || (activeTab === "deposit" ? (!depositAmount || Number(depositAmount) <= 0 || Number(depositAmount) > usdcBalance) : (!withdrawAmount || Number(withdrawAmount) <= 0 || Number(withdrawAmount) > userDeposits)));
 
   const handleAction = () => {
     if (!isConnected) { login(); return; }
-    if (!depositAmount || isNaN(Number(depositAmount))) return;
-    setIsAlertOpen(true);
+    if (activeTab === "deposit") {
+      if (!depositAmount || isNaN(Number(depositAmount)) || Number(depositAmount) > usdcBalance) return;
+      setIsAlertOpen(true);
+    } else {
+      if (!withdrawAmount || isNaN(Number(withdrawAmount)) || Number(withdrawAmount) > userDeposits) return;
+      writeWithdraw({
+        address: EDICT_PROXY_VAULT_ADDRESS as `0x${string}`,
+        abi: vaultAbi,
+        functionName: "withdraw",
+        args: [BigInt(Math.floor(Number(withdrawAmount) * 1e6))],
+      });
+    }
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -175,25 +243,30 @@ export function VaultActionPanel({ isActive }: VaultActionPanelProps) {
     <>
       <div className="bg-card border border-black/5 dark:border-white/[0.03] rounded-[1.5rem] overflow-hidden shadow-sm">
         {/* Tab row */}
-        <div className="flex border-b border-black/5 dark:border-white/[0.03]">
-          {(["deposit", "withdraw"] as TabId[]).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 flex items-center justify-center gap-2 py-4 text-[11px] font-mono tracking-[0.15em] uppercase transition-colors ${
-                activeTab === tab
-                  ? "text-foreground border-b-2 border-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {tab === "deposit" ? (
-                <ArrowDownToLine className="w-3 h-3" />
-              ) : (
-                <ArrowUpFromLine className="w-3 h-3" />
-              )}
-              {tab}
-            </button>
-          ))}
+        <div className="p-6 pb-2">
+          <div className="flex bg-black/[0.04] dark:bg-white/[0.04] rounded-xl p-1 relative">
+            {(["deposit", "withdraw"] as TabId[]).map((tab) => {
+              const isActiveTab = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-[13px] font-medium tracking-wide capitalize transition-all rounded-lg ${
+                    isActiveTab
+                      ? "text-foreground bg-background dark:bg-[#1C1C1C] shadow-sm"
+                      : "text-muted-foreground hover:text-foreground hover:bg-black/[0.02] dark:hover:bg-white/[0.02]"
+                  }`}
+                >
+                  {tab === "deposit" ? (
+                    <ArrowDownToLine className="w-3.5 h-3.5" />
+                  ) : (
+                    <ArrowUpFromLine className="w-3.5 h-3.5" />
+                  )}
+                  {tab}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="p-6 flex flex-col gap-4">
@@ -212,6 +285,15 @@ export function VaultActionPanel({ isActive }: VaultActionPanelProps) {
                   <Input
                     type="text"
                     inputMode="decimal"
+                    name={depositInputId}
+                    id={depositInputId}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    data-1p-ignore="true"
+                    data-lpignore="true"
+                    data-form-type="other"
                     placeholder="0"
                     value={depositAmount}
                     disabled={!isActive || isBusy}
@@ -236,37 +318,78 @@ export function VaultActionPanel({ isActive }: VaultActionPanelProps) {
             )}
           </AnimatePresence>
 
-          {/* Withdraw placeholder */}
-          {activeTab === "withdraw" && (
-            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground/40 gap-2">
-              <ArrowUpFromLine className="w-8 h-8" />
-              <p className="text-sm font-mono uppercase tracking-widest">
-                Coming soon
-              </p>
-            </div>
-          )}
+          {/* Withdraw input */}
+          <AnimatePresence initial={false}>
+            {mounted && isConnected && activeTab === "withdraw" && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                className="overflow-hidden"
+              >
+                <div className="flex flex-col border border-black/5 dark:border-white/[0.05] rounded-[1.25rem] p-4 gap-3">
+                  <div className="text-sm font-medium text-foreground/80">Withdraw USDC</div>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    name={withdrawInputId}
+                    id={withdrawInputId}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    data-1p-ignore="true"
+                    data-lpignore="true"
+                    data-form-type="other"
+                    placeholder="0"
+                    value={withdrawAmount}
+                    disabled={!isActive || isBusy}
+                    onChange={(e) => setWithdrawAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                    className="!bg-transparent border-0 h-14 shadow-none px-0 text-3xl font-mono font-medium outline-none placeholder:text-muted-foreground/30 focus-visible:ring-0"
+                  />
+                  <div className="flex justify-between items-center text-sm text-muted-foreground">
+                    <span>{withdrawAmount ? `$${Number(withdrawAmount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "$0.00"}</span>
+                    <div className="flex items-center gap-2">
+                      <span>Available: {userDeposits.toFixed(2)}</span>
+                      <button
+                        onClick={() => setWithdrawAmount(userDeposits.toString())}
+                        disabled={userDeposits <= 0}
+                        className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors disabled:opacity-30"
+                      >
+                        MAX
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          {/* Summary card */}
+          {/* Summary card deposit */}
           {activeTab === "deposit" && (
             <div className="flex flex-col gap-3 border border-black/5 dark:border-white/[0.05] rounded-[1.25rem] p-4 bg-background/40 dark:bg-background/20">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Network</span>
-                <span className="font-medium">Base Sepolia</span>
+                <span className="font-medium flex items-center gap-1.5">
+                  <BaseNetworkIcon className="w-3.5 h-3.5 text-foreground/60" />
+                  Base Sepolia
+                </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Deposit APY</span>
-                <span className="font-medium font-mono">
+                <span className="text-xs font-medium font-mono">
                   {apysLoading ? <span className="animate-pulse">--%</span> : `${currentApy}%`}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Compliance Risk</span>
-                <span className="font-medium text-emerald-600 dark:text-emerald-400">Low</span>
+                <span className="font-medium">Low</span>
               </div>
               {depositAmount && Number(depositAmount) > 0 && (
                 <div className="flex justify-between text-sm pt-2 border-t border-black/5 dark:border-white/[0.04]">
                   <span className="text-muted-foreground">Est. monthly yield</span>
-                  <span className="font-medium font-mono">
+                  <span className="text-[13px] font-semibold font-mono">
                     ${((Number(depositAmount) * Number(currentApy) / 100) / 12).toFixed(2)}
                   </span>
                 </div>
@@ -274,8 +397,25 @@ export function VaultActionPanel({ isActive }: VaultActionPanelProps) {
             </div>
           )}
 
+          {/* Summary card withdraw */}
+          {activeTab === "withdraw" && (
+            <div className="flex flex-col gap-3 border border-black/5 dark:border-white/[0.05] rounded-[1.25rem] p-4 bg-background/40 dark:bg-background/20">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Network</span>
+                <span className="font-medium flex items-center gap-1.5">
+                  <BaseNetworkIcon className="w-3.5 h-3.5 text-foreground/60" />
+                  Base Sepolia
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Available to Withdraw</span>
+                <span className="text-xs font-medium font-mono">${userDeposits.toFixed(2)}</span>
+              </div>
+            </div>
+          )}
+
           {/* Action button */}
-          {activeTab === "deposit" && (
+          {isConnected && (
             <Button
               onClick={handleAction}
               disabled={isButtonDisabled}
@@ -289,49 +429,41 @@ export function VaultActionPanel({ isActive }: VaultActionPanelProps) {
       </div>
 
       {/* Recent transactions */}
-      {txRecords.length > 0 && (
+      {transactions.length > 0 && (
         <div className="bg-card border border-black/5 dark:border-white/[0.03] rounded-[1.5rem] overflow-hidden shadow-sm">
-          <div className="px-6 py-4 border-b border-black/5 dark:border-white/[0.03]">
-            <div className="text-[11px] font-mono tracking-[0.2em] text-muted-foreground uppercase flex items-center gap-2">
-              <Clock className="w-3 h-3" />
-              Recent Transactions
-            </div>
+          <div className="px-6 py-5 border-b border-black/5 dark:border-white/[0.03] flex items-center justify-between">
+            <h3 className="text-sm font-medium text-foreground tracking-tight">Recent Transactions</h3>
           </div>
           <div className="divide-y divide-black/5 dark:divide-white/[0.03]">
-            {txRecords.map((tx) => (
-              <div key={tx.hash} className="flex items-center justify-between px-6 py-3.5 hover:bg-black/[0.015] dark:hover:bg-white/[0.015] transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                    tx.type === "Deposit" ? "bg-emerald-500/10" : "bg-blue-500/10"
-                  }`}>
+            {transactions.map((tx) => (
+              <div key={tx.hash} className="flex items-center justify-between px-6 py-4 hover:bg-black/[0.015] dark:hover:bg-white/[0.015] transition-colors">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
                     {tx.type === "Deposit"
-                      ? <ArrowDownToLine className="w-3 h-3 text-emerald-500" />
-                      : <ArrowUpFromLine className="w-3 h-3 text-blue-500" />}
+                      ? <ArrowDownToLine className="w-3.5 h-3.5 text-foreground/70" />
+                      : <ArrowUpFromLine className="w-3.5 h-3.5 text-foreground/70" />}
                   </div>
-                  <div>
-                    <div className="text-sm font-medium text-foreground">{tx.type}</div>
+                  <div className="flex flex-col gap-0.5">
+                    <div className="text-[13px] font-medium text-foreground/90">{tx.type}</div>
                     <div className="text-[11px] font-mono text-muted-foreground">${tx.amount} USDC</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <Badge
-                    variant="outline"
-                    className={`text-[9px] uppercase tracking-widest h-auto px-2 py-0.5 ${
-                      tx.status === "confirmed"
-                        ? "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5"
-                        : "border-amber-500/30 text-amber-600 dark:text-amber-400 bg-amber-500/5"
-                    }`}
-                  >
-                    {tx.status === "confirmed"
-                      ? <CheckCircle2 className="w-2.5 h-2.5 mr-1 inline" />
-                      : <Loader2 className="w-2.5 h-2.5 mr-1 inline animate-spin" />}
-                    {tx.status}
-                  </Badge>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1.5">
+                    {tx.status === "confirmed" ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-muted-foreground" />
+                    ) : (
+                      <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin" />
+                    )}
+                    <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                      {tx.status}
+                    </span>
+                  </div>
                   <a
                     href={`${BASESCAN_TX_URL}${tx.hash}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-muted-foreground/50 hover:text-foreground transition-colors"
+                    className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 text-muted-foreground hover:text-foreground transition-colors"
                     title="View on Basescan"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -349,7 +481,7 @@ export function VaultActionPanel({ isActive }: VaultActionPanelProps) {
           <AlertDialogHeader className="mb-2 text-left place-items-start sm:place-items-start sm:text-left">
             <AlertDialogTitle className="text-xl tracking-tight">Identity Verification Required</AlertDialogTitle>
             <AlertDialogDescription className="text-base mt-2">
-              You must verify your identity before making a deposit. This process only takes a few moments.
+              Your connected address must hold a valid CVI (Verified Identity) attestation to execute vault deposits.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex flex-col gap-6 mt-6">

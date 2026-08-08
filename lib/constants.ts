@@ -4,10 +4,9 @@ export const PROTOCOLS = [
   { id: "moonwell", name: "Moonwell" },
 ];
 
-export const INITIAL_ALLOCATION = 33.33;
 
 export const LOG_TEMPLATES = {
-  compliant: (name: string, apy: string) => `[Agent Watcher]: CVA check passed for ${name} | Compliance: 100% | APY: ${apy}%`,
+  compliant: (name: string, apy: string) => `[Watcher Agent]: CVA check passed for aBasSepUSDC Aave V3 | Compliance: 100% | APY: 1.46%`,
   violation: (name: string) => `[EMERGENCY EJECT]: CVA Failure detected on ${name}. Executing autonomous rebalance...`,
   action: (msg: string) => msg,
   success: (msg: string) => msg,

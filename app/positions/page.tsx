@@ -4,7 +4,7 @@ import { useStore } from "@/lib/store";
 import { formatCurrency } from "@/lib/utils";
 import { AssetToggle } from "@/components/vault/asset-toggle";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
-import { ProtocolAllocation } from "@/components/vault/protocol-allocation";
+import { ProtocolAllocation, VaultReserveRow } from "@/components/vault/protocol-allocation";
 import { PositionChart } from "@/components/vault/position-chart";
 import { Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useAccount, useReadContract } from "wagmi";
 import { parseAbi } from "viem";
 
-const EDICT_PROXY_VAULT_ADDRESS = "0xE9E6792401d53009d6768ba0A03b5Db6a71032D4";
+const EDICT_PROXY_VAULT_ADDRESS = "0x28E41078B83c7f756f875c834635627Dd9ecCB1D";
 const vaultAbi = parseAbi(["function userDeposits(address user) external view returns (uint256)"]);
 
 export default function PositionsPage() {
@@ -20,6 +20,11 @@ export default function PositionsPage() {
   const { address } = useAccount();
   const { activeTab, pools } = useStore();
   const pool = pools[activeTab];
+  const simulationProtocols = useStore((s) => s.pools[activeTab].simulationProtocols);
+  const idleVaultCapital = useStore((s) => s.pools[activeTab].idleVaultCapital);
+
+  // During simulation use simulationProtocols so allocations reflect flight-to-safety
+  const displayProtocols = simulationProtocols ?? pool.protocols;
 
   const isConnected = ready && authenticated;
 
@@ -96,27 +101,44 @@ export default function PositionsPage() {
           <PositionChart />
 
           <Card className="w-full bg-card border-black/5 dark:border-white/[0.03] shadow-xl rounded-[1.5rem] overflow-hidden">
-            <CardHeader className="pt-6 pb-5 px-6 md:pt-8 md:pb-6 md:px-8 border-b border-black/5 dark:border-white/[0.03] flex flex-row items-center justify-between" style={{ paddingBottom: '1.5rem' }}>
-              <div className="text-[11px] font-mono tracking-[0.2em] text-muted-foreground uppercase font-medium">
+            {/* Header */}
+            <div className="px-7 py-5 border-b border-black/5 dark:border-white/[0.03] flex items-center justify-between">
+              <h2 className="text-base font-medium text-foreground tracking-tight">
                 Portfolio Allocation
-              </div>
-            </CardHeader>
+              </h2>
+            </div>
+            
+            {/* Column headers */}
+            <div className="grid grid-cols-12 gap-2 px-7 py-3 border-b border-black/5 dark:border-white/[0.03] bg-black/[0.015] dark:bg-white/[0.015]">
+              <div className="col-span-5 text-[9px] font-mono tracking-widest text-muted-foreground/50 uppercase">Protocol</div>
+              <div className="col-span-4 text-[9px] font-mono tracking-widest text-muted-foreground/50 uppercase">Exposure</div>
+              <div className="col-span-3 text-[9px] font-mono tracking-widest text-muted-foreground/50 uppercase text-right">Holdings</div>
+            </div>
+
             <CardContent className="p-0">
               <div className="flex flex-col divide-y divide-black/5 dark:divide-white/[0.03]">
                 {realTotalDeposited > 0 ? (
-                  pool.protocols.map((protocol) => {
-                    const isRebalancing = pool.protocols.some(p => p.status === 'violation' || p.status === 'rebalancing');
-                    const hasExited = pool.protocols.some(p => p.status === 'exited');
-                    const systemState = isRebalancing ? "rebalancing" : hasExited ? "settled" : "initial";
-                    return (
-                      <ProtocolAllocation 
-                        key={protocol.id} 
-                        protocol={protocol} 
-                        totalValue={realTotalDeposited} 
-                        systemState={systemState}
-                      />
-                    );
-                  })
+                  <>
+                    {displayProtocols.map((protocol) => {
+                      const isRebalancing = displayProtocols.some(p => p.status === 'violation' || p.status === 'rebalancing');
+                      const hasExited = displayProtocols.some(p => p.status === 'exited');
+                      const systemState = isRebalancing ? "rebalancing" : hasExited ? "settled" : "initial";
+                      const totalWithReserve = realTotalDeposited + idleVaultCapital;
+                      return (
+                        <ProtocolAllocation
+                          key={protocol.id}
+                          protocol={protocol}
+                          totalValue={realTotalDeposited}
+                          totalWithReserve={totalWithReserve}
+                          systemState={systemState}
+                        />
+                      );
+                    })}
+                    <VaultReserveRow
+                      idleVaultCapital={idleVaultCapital}
+                      totalWithReserve={realTotalDeposited + idleVaultCapital}
+                    />
+                  </>
                 ) : (
                   <div className="p-8 text-center text-sm text-muted-foreground font-medium">
                     No active deposits in {activeTab}.

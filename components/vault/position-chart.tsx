@@ -3,6 +3,8 @@
 import * as React from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { useStore } from "@/lib/store";
+import { useReadContract, useAccount } from "wagmi";
+import { parseAbi } from "viem";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   Select,
@@ -24,44 +26,79 @@ function formatValue(value: number) {
   return value.toFixed(2);
 }
 
-function generateChartData(baseTvl: number, days: number) {
+
+function generateChartData(baseTvl: number, days: number, transactions: any[] = []) {
   const data = [];
-  let currentTvl = baseTvl * (1 - (days / 365) * 0.4); 
-  
   const pointsPerDay = days === 7 ? 4 : 1; 
   const totalDaysToGoBack = days === 365 ? 364 : days - 1;
   const totalPoints = totalDaysToGoBack * pointsPerDay;
   
-  for (let i = totalPoints; i >= 0; i--) {
-    const date = new Date();
-    date.setHours(date.getHours() - (i * (24 / pointsPerDay)));
+  const now = new Date();
+  
+  let mockWiggle = 0;
+  for (let i = 0; i <= totalPoints; i++) {
+    const date = new Date(now.getTime() - (i * (24 * 60 * 60 * 1000) / pointsPerDay));
     
-    const volatility = days > 90 ? 0.08 : 0.03;
-    const changeFactor = (Math.random() * volatility - (volatility * 0.2)) / pointsPerDay;
-    const dailyChange = baseTvl * changeFactor;
-    currentTvl = Math.max(0, currentTvl + dailyChange);
+    let realOffset = 0;
+    for (const tx of transactions) {
+      if (tx.status === 'confirmed') {
+        const txDate = new Date(tx.timestamp || tx.ts);
+        if (txDate > date) {
+          const amount = parseFloat(tx.amount) || 0;
+          if (tx.type.toLowerCase() === 'deposit') {
+            realOffset -= amount;
+          } else if (tx.type.toLowerCase() === 'withdraw') {
+            realOffset += amount;
+          }
+        }
+      }
+    }
     
-    if (i === 0) {
-      currentTvl = baseTvl;
+    if (i > 0) {
+      const pseudoRandom = Math.sin(i * 87.331) * Math.cos(i * 12.987);
+      const volatility = days > 90 ? 0.05 : 0.02;
+      const change = baseTvl * volatility * pseudoRandom / pointsPerDay;
+      const drift = (baseTvl * 0.4) / totalPoints; 
+      mockWiggle -= change + drift; 
     }
     
     data.push({
       timestamp: date.getTime(),
-      value: currentTvl,
+      value: Math.max(0, baseTvl + realOffset + mockWiggle),
     });
   }
-  return data;
+  
+  return data.reverse();
 }
+
+const EDICT_PROXY_VAULT_ADDRESS = "0x28E41078B83c7f756f875c834635627Dd9ecCB1D";
+const vaultAbi = parseAbi([
+  "function userDeposits(address user) external view returns (uint256)"
+]);
 
 export function PositionChart() {
   const activeTab = useStore((state) => state.activeTab);
-  const totalDeposited = useStore((state) => state.pools[activeTab].totalDeposited);
+  const storeTotalDeposited = useStore((state) => state.pools[activeTab].totalDeposited);
+  const transactions = useStore((state) => state.transactions);
+  const { address } = useAccount();
+  
+  const { data: userDepositsData } = useReadContract({
+    address: EDICT_PROXY_VAULT_ADDRESS as `0x${string}`,
+    abi: vaultAbi,
+    functionName: "userDeposits",
+    args: address ? [address as `0x${string}`] : undefined,
+    query: { enabled: !!address && activeTab === "USDC" },
+  });
+  
+  const totalDeposited = activeTab === "USDC"
+    ? (userDepositsData !== undefined ? Number(userDepositsData) / 1e6 : 0)
+    : storeTotalDeposited;
   
   const [timeRange, setTimeRange] = React.useState("30");
 
   const chartData = React.useMemo(() => {
-    return generateChartData(totalDeposited, parseInt(timeRange));
-  }, [totalDeposited, timeRange]);
+    return generateChartData(totalDeposited, parseInt(timeRange), transactions);
+  }, [totalDeposited, timeRange, transactions]);
 
   const chartConfig = {
     value: {

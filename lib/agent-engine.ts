@@ -91,8 +91,8 @@ export function startAgent() {
     const compliantProtocols = protocols.filter(p => p.status === "compliant");
     if (compliantProtocols.length > 0) {
       if (tickCount % 4 === 0) {
-        addLog({ level: "action", message: `[YIELD ENGINE] Optimizing capital allocation across compliant protocols...` });
-        addLog({ level: "success", message: `[YIELD ENGINE] Rebalance successful. Projected APY increased by +0.0${Math.floor(Math.random() * 5 + 1)}%` });
+        addLog({ level: "info", message: `[Watcher Agent]: CVA check passed for aBasSepUSDC Aave V3 | Compliance: 100% | APY: 1.46%` });
+        addLog({ level: "info", message: `[Watcher Agent]: CVA check passed for aBasSepUSDC Aave V3 | Compliance: 100% | APY: 1.46%` });
       } else {
         const randomP = compliantProtocols[Math.floor(Math.random() * compliantProtocols.length)];
         const fakeApy = (Math.random() * 2 + 3.5).toFixed(1);
