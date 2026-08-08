@@ -1,0 +1,809 @@
+CleanverseComplianceProtocol(CCP)
+IntegrationGuide(ForCVICompliance
+Validator)V2
+Overview
+TheCVIComplianceValidator(IAPassComplianceValidator)provideson-chainidentity
+complianceverificationbasedonCVI(CleanverseVerifiedIdentity)forDeFiprotocols.Thisguide
+isintendedforprotocoldevelopersandexplainshowtointegratethevalidatortoimplement
+KYC/compliancegates.
+WhattheValidatorDoes
+•
+Verifywhetherauser'sCVIsatisfiesthecompliancerulesconfiguredforapool(Group/Tier/
+Sub-Group/Sub-Tier/countrybitmap)
+•
+Manageper-poolcompliancerules(multiplerulesperpool,ORlogic)
+•
+RegisterCVIforCVA(CleanverseVerifiedAsset)vaults(Pool+Fee)sotheycanhold/transfer
+CVAs
+•
+Pausepoolsorfreezeaccounts(emergencyriskcontrol)
+ChoosinganIntegrationMode
+Picktheintegrationmodebasedonbusinesscomplexity:
+CoreInterfaceSpecification
+3.1RuleV2DataStructure
+Rulestruct
+struct RuleV2 { 
+    bytes2 allowedGroup;        // Allowed CVI group (empty = no restriction) 
+    bytes2 allowedSubGroup;     // Allowed CVI sub-group (empty = no 
+restriction) 
+    uint8 minTier;              // Minimum CVI tier (0 = no restriction) 
+    uint8 minSubTier;           // Minimum CVI sub-tier (0 = no restriction) 
+    uint256 poolCountryBitmap;  // Country bitmap (0 = no restriction) 
+} 
+ValidationLogic:FieldswithinasingleRuleV2areAND;multipleRuleV2sareOR;country
+bitmapsarecheckedviabitwiseAND.
+3.2InterfaceList
+Registration(REGISTER_ROLE)
+IAPassComplianceValidatorInterface
+function registerV2(address poolAddress, RuleV2 calldata rule) external; 
+function registerApass(address poolAddress, address aTokenAddress) external; 
+function registerApass(address poolAddress, address aTokenAddress, address 
+feeAddress) external; 
+function setRuleV2FromRegistrar(address poolAddress, RuleV2 calldata rule) 
+external; 
+function isRegistered(address poolAddress) external view returns (bool); 
+RuleManagement(BusinessContractItself)
+IAPassComplianceValidatorInterface
+function setRuleV2FromContract(RuleV2 calldata rule) external; 
+function addRuleV2FromContract(RuleV2 calldata rule) external; 
+function removeRuleV2FromContract(uint256 index) external; 
+function getRulesV2(address poolAddress) external view returns (RuleV2[] 
+memory); 
+ComplianceVerification(NoPermissionRequired)
+IAPassComplianceValidatorInterface
+function complianceVerify(address poolAddress, address userAddress) external 
+view returns (bool); 1
+2
+3
+4
+5
+6
+7
+1
+2
+3
+4
+5
+1
+2
+3
+4
+1
+Pattern1:FactoryMode
+4.1UseCases
+Factorymodeisdesignedformulti-poolbusinesses(DEX,LaunchPool).OncetheFactoryholds
+theREGISTER_ROLE,itcancallregisterV2/registerApassdirectlywhencreating
+pools.
+TypicalScenarios:
+•
+DEXpools:BTC/USDTpoolrequiresTier30,ETH/USDTpoolrequiresTier40,institutional
+tradingpairsrequireGroup"ab"+specificcountrybitmap
+•
+LaunchPool:createaseparatepoolforeachnewprojectwithdifferentiatedaccess
+thresholds
+CoreAdvantages:
+•
+Oneauthorization,batch-managemultiplepools
+•
+Eachpoolhasindependentcompliancepolicy,nocross-impact
+•
+SupportsCVAPool+Feedual-addressregistration
+4.2AuthorizationFlow
+TheFactorymustholdtheREGISTER_ROLEtocallregisterV2/registerApass.
+Workflow:
+workflow
+Step 1: Deploy the Factory contract 
+            ↓ 
+Step 2: Call the API to authorize the Factory address (grant REGISTER_ROLE) 
+            ↓ 
+Step 3: Factory calls registerV2 / registerApass to register pools 
+            ↓ 
+Step 4: Pool business contract calls complianceVerify for compliance checks 
+AuthorizationAPI:POST /api/cooperate/validator/apply
+4.3FactoryContractTemplate
+TheFactorymustimplement:
+•
+InheritOwnable,onlyOwnercancreatepools1
+2
+3
+4
+5
+6
+7
+•Storethevalidatoraddress(immutable)
+•
+Callthevalidatorinterfacetoregisterpoolsandmanagerules
+ContractTemplate:
+FactoryContractTemplate
+// SPDX-License-Identifier: MIT 
+pragma solidity ^0.8.24; 
+ 
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol"; 
+import {IAPassComplianceValidator} from "./IAPassComplianceValidator.sol"; 
+ 
+/** 
+ * @title DexLaunchFactory 
+ * @notice DEX liquidity pool factory with CVI V2 compliance support 
+ */ 
+contract DexLaunchFactory is Ownable { 
+ 
+    address public immutable complianceValidator; 
+ 
+    /// @notice Pool information 
+    struct PoolInfo { 
+        address pool; 
+        address aToken; 
+        address feeAccount; 
+        bool isATokenPool; 
+        uint256 createdAt; 
+    } 
+ 
+    PoolInfo[] public pools; 
+ 
+    constructor(address validator_, address owner_) { 
+        require(validator_ != address(0), "validator=0"); 
+        complianceValidator = validator_; 
+        _transferOwnership(owner_); 
+    } 
+ 
+    /// @notice Create a regular V2 pool (uses validator directly) 
+    /// @param poolAddress Pool contract address 
+    /// @param rule V2 compliance rule 
+    function createPoolV2( 
+        address poolAddress, 
+        IAPassComplianceValidator.RuleV2 calldata rule 
+    ) external onlyOwner { 
+        IAPassComplianceValidator(complianceValidator).registerV2(poolAddress, 
+rule); 1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+        pools.push(PoolInfo({ 
+            pool: poolAddress, 
+            aToken: address(0), 
+            feeAccount: address(0), 
+            isATokenPool: false, 
+            createdAt: block.timestamp 
+        })); 
+    } 
+ 
+    /// @notice Create a CVA pool (registers Pool + Fee together) 
+    /// @param poolAddress Pool contract address 
+    /// @param aTokenAddress CVA address 
+    /// @param feeAddress Fee account address 
+    /// @param rule V2 compliance rule 
+    function createATokenPoolV2( 
+        address poolAddress, 
+        address aTokenAddress, 
+        address feeAddress, 
+        IAPassComplianceValidator.RuleV2 calldata rule 
+    ) external onlyOwner { 
+        // 1. Register pool and set V2 compliance rule 
+        IAPassComplianceValidator(complianceValidator).registerV2(poolAddress, 
+rule); 
+        // 2. Register CVI for Pool + Fee addresses 
+        IAPassComplianceValidator(complianceValidator).registerApass( 
+            poolAddress, aTokenAddress, feeAddress 
+        ); 
+        pools.push(PoolInfo({ 
+            pool: poolAddress, 
+            aToken: aTokenAddress, 
+            feeAccount: feeAddress, 
+            isATokenPool: true, 
+            createdAt: block.timestamp 
+        })); 
+    } 
+} 
+4.4PoolContractTemplate
+EachPoolcontractmustimplement:
+•
+Storethevalidatoraddress(immutable)
+•
+CallcomplianceVerifyatkeybusinesssteps
+•
+OptionallystoretheFactoryaddressforcallerverification
+ContractTemplate:40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+58
+59
+60
+61
+62
+63
+64
+65
+66
+67
+68
+69
+70
+71
+72
+73
+74
+PoolContractTemplate
+// SPDX-License-Identifier: MIT 
+pragma solidity ^0.8.24; 
+ 
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol"; 
+import {IAPassComplianceValidator} from "./IAPassComplianceValidator.sol"; 
+ 
+/** 
+ * @title CompliantDexPool 
+ * @notice DEX pool with CVI V2 compliance support 
+ */ 
+contract CompliantDexPool is Ownable { 
+ 
+    IAPassComplianceValidator public immutable validator; 
+    address public immutable factory; 
+ 
+    // Trading pair info 
+    address public token0; 
+    address public token1; 
+ 
+    constructor(address validator_, address factory_) { 
+        require(validator_ != address(0), "validator=0"); 
+        validator = IAPassComplianceValidator(validator_); 
+        factory = factory_; 
+    } 
+ 
+    /// @notice Verify CVI when adding liquidity 
+    /// @param to Recipient of the liquidity share 
+    /// @param amount Liquidity amount 
+    function addLiquidity(address to, uint256 amount) external { 
+        // Verify the recipient meets compliance requirements 
+        require( 
+            validator.complianceVerify(address(this), to), 
+            "A-Pass not qualified" 
+        ); 
+        // Add liquidity logic... 
+    } 
+ 
+    /// @notice Verify CVI on swap 
+    /// @param from Sender 
+    /// @param to Recipient 
+    /// @param amount Swap amount 
+    function swap(address from, address to, uint256 amount) external { 
+        // Verify both sides meet compliance requirements 
+        require( 
+            validator.complianceVerify(address(this), from) && 1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+            validator.complianceVerify(address(this), to), 
+            "A-Pass not qualified" 
+        ); 
+        // Swap logic... 
+    } 
+ 
+    // ───  V2 Rule Management 
+────────────────────────────────────────────  
+ 
+    /// @notice Set V2 rule (clears existing V2 rules first, then sets the new 
+one) 
+    function setRuleV2FromContract(IAPassComplianceValidator.RuleV2 calldata 
+rule) external onlyOwner { 
+        validator.setRuleV2FromContract(rule); 
+    } 
+ 
+    /// @notice Append a V2 rule (OR logic) 
+    function addRuleV2FromContract(IAPassComplianceValidator.RuleV2 calldata 
+rule) external onlyOwner { 
+        validator.addRuleV2FromContract(rule); 
+    } 
+ 
+    /// @notice Remove a V2 rule by index 
+    function removeRuleV2FromContract(uint256 index) external onlyOwner { 
+        validator.removeRuleV2FromContract(index); 
+    } 
+ 
+    /// @notice Get current V2 rules 
+    function getRulesV2() external view returns 
+(IAPassComplianceValidator.RuleV2[] memory) { 
+        return validator.getRulesV2(address(this)); 
+    } 
+} 
+4.5IntegrationMethodA:UsingCVA(AutomaticCompliance)
+WhenusingCVA(AUSDT/AUSDC),compliancechecksareperformedautomaticallybytheCVA
+contract―thebusinesscontractdoesnotneedtocallthevalidatorexplicitly.Afterregistering
+thepool,simplycallregisterApasstoissueCVIforthePool(+Fee)address.
+UseCases:
+•
+TheplatformalreadyhasCVAasatradingpair
+•
+TheprotocolneedsaFeeaccounttocollectfees(useregisterApass(pool, token, 
+fee))
+Notes:46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+58
+59
+60
+61
+62
+63
+64
+65
+66
+67
+68
+69
+70
+71
+72
+73
+•registerApasscanonlybecalledbytheFactory,andonlyforCVAvaultregistration
+•
+Afeeaddressofaddress(0)skipstheFeeCVIregistration
+IntegrationSteps:
+StepWorkflow
+Step 1: Factory calls registerV2 to register the pool and set rules 
+            ↓ 
+Step 2: Factory calls registerApass(pool, token, fee) to register CVI 
+            ↓ 
+Step 3: Users deposit CVA into the vault 
+            ↓ 
+Step 4: On transfers, the CVA contract automatically verifies CVI 
+KeyCode:
+PoolKeyCode1
+2
+3
+4
+5
+6
+7
+// Factory creates a CVA pool 
+function createATokenPoolV2( 
+    address poolAddress, 
+    address aTokenAddress, 
+    address feeAddress, 
+    IAPassComplianceValidator.RuleV2 calldata rule 
+) external onlyOwner { 
+    // 1. Register pool and set V2 compliance rule 
+    IAPassComplianceValidator(validator).registerV2(poolAddress, rule); 
+    // 2. Register CVI for Pool + Fee addresses 
+    IAPassComplianceValidator(validator).registerApass( 
+        poolAddress, aTokenAddress, feeAddress 
+    ); 
+} 
+ 
+// CVA contract performs automatic compliance checks (no explicit validator 
+call from business contract) 
+function _update(address from, address to, uint256 amount) internal override { 
+    // Both sides must pass CVI verification 
+    if (!validator.complianceVerify(address(this), from)) { 
+        revert TransferNotAllowed(); 
+    } 
+    if (!validator.complianceVerify(address(this), to)) { 
+        revert TransferNotAllowed(); 
+    } 
+    super._update(from, to, amount); 
+} 
+4.6IntegrationMethodB:CallingtheValidatorDirectly
+WhenCVAisnotused,thebusinesscontractcallscomplianceVerifyatkeybusinesssteps.
+UseCases:
+•
+UsenativeERC20asatradingpair
+•
+Needadditionalcompliancechecksatthebusinesslayer
+•
+Buildmorecomplexcustomaccesslogic
+IntegrationSteps:
+StepWorkflow
+Step 1: Factory calls registerV2 to register the pool 
+            ↓ 
+Step 2: User calls a business method 
+            ↓ 
+Step 3: Business contract calls complianceVerify 1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+1
+2
+3
+4
+5
+            ↓ 
+Step 4: Pass →  business executes | Fail →  revert 
+KeyCode:
+PoolKeyCode
+// Factory registers a V2 pool 
+function createPoolV2( 
+    address poolAddress, 
+    IAPassComplianceValidator.RuleV2 calldata rule 
+) external onlyOwner { 
+    IAPassComplianceValidator(validator).registerV2(poolAddress, rule); 
+} 
+ 
+// Pool contract calls the validator in business logic 
+function swap(address from, address to, uint256 amount) external { 
+    require( 
+        validator.complianceVerify(address(this), from) && 
+        validator.complianceVerify(address(this), to), 
+        "A-Pass not qualified" 
+    ); 
+    // Swap logic... 
+} 
+Pattern2:Single-ContractMode
+5.1UseCases
+Single-contractmodedoesnotrequireFactoryauthorization.Deploythecontractandregisterit
+viatheAPItostartusingthevalidator.Suitablefor:
+•
+Lendingprotocols:verifyborrowerCVItofiltercompliantborrowers
+•
+NFTminting:whitelistminting,prioritizecommunitycontributors
+•
+Stakingpools:high-yieldpoolsrestricthigh-tierusers
+•
+Governancevoting:limitvotestoqualifiedparticipants
+5.2ContractTemplate
+Thebusinesscontractmustimplement:
+•
+Storethevalidatoraddress(immutable)6
+7
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+•CallcomplianceVerifyatkeybusinesssteps
+•
+InheritOwnabletoprotectmanagementfunctions
+ContractTemplate:
+SingleContractTemplate
+// SPDX-License-Identifier: MIT 
+pragma solidity ^0.8.24; 
+ 
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol"; 
+import {IAPassComplianceValidator} from "./IAPassComplianceValidator.sol"; 
+ 
+/** 
+ * @title CompliantLending 
+ * @notice Lending protocol with CVI V2 compliance support 
+ */ 
+contract CompliantLending is Ownable { 
+ 
+    IAPassComplianceValidator public immutable validator; 
+ 
+    mapping(address => uint256) public deposits; 
+    mapping(address => uint256) public borrowings; 
+ 
+    constructor(address validator_) { 
+        require(validator_ != address(0), "validator=0"); 
+        validator = IAPassComplianceValidator(validator_); 
+    } 
+ 
+    /// @notice Deposit 
+    function deposit(uint256 amount) external { 
+        // Verify the depositor's CVI 
+        require( 
+            validator.complianceVerify(address(this), msg.sender), 
+            "A-Pass not qualified" 
+        ); 
+        deposits[msg.sender] += amount; 
+    } 
+ 
+    /// @notice Borrow 
+    function borrow(uint256 amount) external { 
+        // Verify the borrower's CVI (can set higher thresholds) 
+        require( 
+            validator.complianceVerify(address(this), msg.sender), 
+            "A-Pass not qualified" 
+        ); 
+        borrowings[msg.sender] += amount; 1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+    } 
+ 
+    /// @notice Withdraw 
+    function withdraw(uint256 amount) external { 
+        // Verify the withdrawer's CVI 
+        require( 
+            validator.complianceVerify(address(this), msg.sender), 
+            "A-Pass not qualified" 
+        ); 
+        require(deposits[msg.sender] >= amount, "insufficient balance"); 
+        deposits[msg.sender] -= amount; 
+    } 
+ 
+    // ───  V2 Rule Management 
+────────────────────────────────────────────  
+ 
+    /// @notice Set V2 rule (clears existing V2 rules first, then sets the new 
+one) 
+    function setRuleV2FromContract(IAPassComplianceValidator.RuleV2 calldata 
+rule) external onlyOwner { 
+        validator.setRuleV2FromContract(rule); 
+    } 
+ 
+    /// @notice Append a V2 rule (OR logic) 
+    function addRuleV2FromContract(IAPassComplianceValidator.RuleV2 calldata 
+rule) external onlyOwner { 
+        validator.addRuleV2FromContract(rule); 
+    } 
+ 
+    /// @notice Remove a V2 rule by index 
+    function removeRuleV2FromContract(uint256 index) external onlyOwner { 
+        validator.removeRuleV2FromContract(index); 
+    } 
+ 
+    /// @notice Get current V2 rules 
+    function getRulesV2() external view returns 
+(IAPassComplianceValidator.RuleV2[] memory) { 
+        return validator.getRulesV2(address(this)); 
+    } 
+} 
+5.3IntegrationSteps
+StepWorkflow
+Step 1: Deploy the business contract 41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+58
+59
+60
+61
+62
+63
+64
+65
+66
+67
+68
+69
+70
+71
+72
+73
+74
+75
+1
+            ↓ 
+Step 2: Call the API to register the contract with the validator 
+            ↓ 
+Step 3: The operator sets rules via setRuleV2FromContract 
+            ↓ 
+Step 4: User calls a business method 
+            ↓ 
+Step 5: The contract internally calls complianceVerify 
+            ↓ 
+Step 6: Pass →  business continues | Fail →  revert 
+5.4APIRegistration
+Endpoint:POST /api/cooperate/validator/register
+SignatureRule:keccak256(chain + contract_address),lowercasehexconcatenation
+Note:TheAPIregistrationonlybindsthecontractaddress;compliancechecksareperformedby
+thebusinesscontractviainternalcallstothevalidator.
+ComplianceRuleManagement
+Afterapoolisregistered,thebusinesscontractcanmanagecompliancerulesviathefollowing
+methods:
+SampleCode:
+RuleManagementCode
+function setRuleV2FromContract(IAPassComplianceValidator.RuleV2 calldata rule) 
+external onlyOwner { 
+    validator.setRuleV2FromContract(rule); 
+} 
+ 
+function addRuleV2FromContract(IAPassComplianceValidator.RuleV2 calldata rule) 
+external onlyOwner { 
+    validator.addRuleV2FromContract(rule); 
+} 2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+1
+2
+3
+4
+5
+6
+7
+ 
+function removeRuleV2FromContract(uint256 index) external onlyOwner { 
+    validator.removeRuleV2FromContract(index); 
+} 
+ 
+function getRulesV2() external view returns 
+(IAPassComplianceValidator.RuleV2[] memory) { 
+    return validator.getRulesV2(address(this)); 
+} 
+AccessControl:ThebusinesscontractshouldenforceonlyOwnerorAccessControlon
+rulemanagementmethods.8
+9
+10
+11
+12
+13
+14
+15
+
