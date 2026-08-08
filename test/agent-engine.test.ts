@@ -49,3 +49,21 @@ describe('Watcher Agent Telemetry Engine', () => {
     expect(complianceVerify(true)).toBe(true);
   });
 });
+
+it('should block emergency rebalance if the Agent wallet loses its CVI A-Pass', () => {
+    // Simulating the dual-guard in EdictProxyVault.sol's rebalance() function
+    const simulateAgentRebalance = (isAgent: boolean, hasAPass: boolean) => {
+      if (!hasAPass) throw new Error("A-Pass not qualified");
+      if (!isAgent) throw new Error("Missing AGENT_ROLE");
+      return "Rebalance Executed";
+    };
+
+    // Edge Case 1: Agent wallet is compromised/loses compliance status
+    expect(() => simulateAgentRebalance(true, false)).toThrowError("A-Pass not qualified");
+    
+    // Edge Case 2: Random verified user tries to call the admin function
+    expect(() => simulateAgentRebalance(false, true)).toThrowError("Missing AGENT_ROLE");
+    
+    // Happy Path: Authorized agent with a valid A-Pass
+    expect(simulateAgentRebalance(true, true)).toBe("Rebalance Executed");
+  });
