@@ -1,7 +1,8 @@
+require('dotenv').config({ path: '.env.local' });
 const crypto = require('crypto');
 
-const CLEANVERSE_API_ID = "APP20260614112550LIDZXM";
-const CLEANVERSE_API_KEY = "qhfPE24VqLv7wTK7AXMkD4p2i7zKnerg84AtT0IGto0=";
+const CLEANVERSE_API_ID = process.env.CLEANVERSE_API_ID;
+const CLEANVERSE_API_KEY = process.env.CLEANVERSE_API_KEY;
 
 async function main() {
   const address = "0x5c53414E1f15D7668c2b9EC0A92482A64845f5f6";
