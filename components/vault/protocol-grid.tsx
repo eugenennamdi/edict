@@ -12,7 +12,7 @@ export function ProtocolGrid() {
   const idleVaultCapital = useStore((state) => state.pools[activeTab].idleVaultCapital);
 
   const displayProtocols = simulationProtocols ?? protocols;
-  const totalWithReserve = globalTvl + idleVaultCapital;
+  const totalWithReserve = Math.max(globalTvl, idleVaultCapital);
 
   return (
     <Card className="w-full bg-card border-black/5 dark:border-white/[0.03] shadow-xl rounded-[1.5rem] overflow-hidden">

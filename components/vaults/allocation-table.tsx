@@ -86,7 +86,7 @@ export function AllocationTable({ isActive }: AllocationTableProps) {
   const displayProtocols = simulationProtocols ?? protocols;
 
   // Total for allocation bar denominator
-  const totalForBars = globalTvl + idleVaultCapital;
+  const totalForBars = Math.max(globalTvl, idleVaultCapital);
 
   return (
     <div className="bg-card border border-black/5 dark:border-white/[0.03] rounded-[1.5rem] overflow-hidden shadow-sm">

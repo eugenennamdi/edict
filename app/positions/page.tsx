@@ -123,7 +123,7 @@ export default function PositionsPage() {
                       const isRebalancing = displayProtocols.some(p => p.status === 'violation' || p.status === 'rebalancing');
                       const hasExited = displayProtocols.some(p => p.status === 'exited');
                       const systemState = isRebalancing ? "rebalancing" : hasExited ? "settled" : "initial";
-                      const totalWithReserve = realTotalDeposited + idleVaultCapital;
+                      const totalWithReserve = Math.max(realTotalDeposited, idleVaultCapital);
                       return (
                         <ProtocolAllocation
                           key={protocol.id}
@@ -136,7 +136,7 @@ export default function PositionsPage() {
                     })}
                     <VaultReserveRow
                       idleVaultCapital={idleVaultCapital}
-                      totalWithReserve={realTotalDeposited + idleVaultCapital}
+                      totalWithReserve={Math.max(realTotalDeposited, idleVaultCapital)}
                     />
                   </>
                 ) : (
