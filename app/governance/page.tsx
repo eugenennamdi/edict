@@ -11,11 +11,17 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useReadContract, useWriteContract } from "wagmi";
 import { parseAbi } from "viem";
 
+import { useStore } from "@/lib/store";
+
 const VALIDATOR_ADDRESS = "0xaC7e5179C2C7f03f209136886c172eb34F161792";
 const EDICT_PROXY_VAULT_ADDRESS = "0x28E41078B83c7f756f875c834635627Dd9ecCB1D";
 
 const validatorAbi = parseAbi([
   "function complianceVerify(address poolAddress, address userAddress) external view returns (bool)"
+]);
+
+const vaultAbi = parseAbi([
+  "function userDeposits(address user) external view returns (uint256)"
 ]);
 
 export default function GovernancePage() {
@@ -24,7 +30,11 @@ export default function GovernancePage() {
   const [voting, setVoting] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
 
-  // Check CVI Status
+  const storeIsVerified = useStore((s) => s.isVerified);
+  const storeCviStatus = useStore((s) => s.cviStatus);
+  const pools = useStore((s) => s.pools);
+
+  // Check CVI Status on-chain
   const { data: isCviVerified, isLoading: isCheckingCvi } = useReadContract({
     address: VALIDATOR_ADDRESS,
     abi: validatorAbi,
@@ -35,36 +45,46 @@ export default function GovernancePage() {
     },
   });
 
+  // Check Net Position (user deposits) on-chain
+  const { data: userDepositsData } = useReadContract({
+    address: EDICT_PROXY_VAULT_ADDRESS as `0x${string}`,
+    abi: vaultAbi,
+    functionName: "userDeposits",
+    args: address ? [address as `0x${string}`] : undefined,
+    query: {
+      enabled: authenticated && !!address,
+    },
+  });
+
+  const onChainUsdc = userDepositsData !== undefined ? Number(userDepositsData) / 1e6 : 0;
+  const storeUsdc = pools.USDC.totalDeposited;
+  const storeEth = pools.ETH.totalDeposited * 3200;
+  const storeBtc = pools.BTC.totalDeposited * 62000;
+
+  const netPositionUsd = Math.max(onChainUsdc, storeUsdc) + storeEth + storeBtc;
+  const isCviCompliant = Boolean(isCviVerified || storeIsVerified || storeCviStatus === "verified");
+
   const handleVote = async () => {
-    if (!authenticated) {
+    if (!authenticated || !address) {
       toast.error("Please connect your wallet first.");
+      return;
+    }
+
+    // 1. Net Position Check ($10,000 minimum)
+    if (netPositionUsd < 10000) {
+      toast.error("Voting Restricted: A minimum net position of $10,000 is required to vote.");
+      return;
+    }
+
+    // 2. CVI Compliance Check
+    if (!isCviCompliant) {
+      toast.error("Compliance failure: Wallet does not meet CVI requirements for governance participation.");
       return;
     }
 
     setVoting(true);
     
     try {
-      if (isCheckingCvi) {
-        toast.info("Checking CVI Compliance", {
-          icon: <Loader2 className="w-4 h-4 animate-spin text-foreground" />
-        });
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      }
-
-      if (!isCviVerified) {
-        toast.error("CVI Verification Failed: You must have an active A-Pass to participate in permissioned governance.", {
-          duration: 5000
-        });
-        setVoting(false);
-        return;
-      }
-
-      toast.success("CVI Verified", {
-        icon: <CheckCircle2 className="text-foreground w-4 h-4" />
-      });
-      
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
       toast.info("Simulating onchain vote transaction", {
         icon: <Loader2 className="w-4 h-4 animate-spin text-foreground" />
       });
