@@ -11,7 +11,6 @@ import { useAccount, useReadContract } from "wagmi";
 import { parseAbi } from "viem";
 
 const BASE_SCAN_URL = "https://sepolia.basescan.org/tx/";
-const ALLOWED_ADDRESS = "0x5c53414e1f15d7668c2b9ec0a92482a64845f5f6"; // only this wallet may simulate
 const EDICT_PROXY_VAULT_ADDRESS = "0x28E41078B83c7f756f875c834635627Dd9ecCB1D";
 const vaultAbi = parseAbi(["function totalDeposits() external view returns (uint256)"]);
 
@@ -32,9 +31,8 @@ export function SimulationEngine() {
   const [isSimulating, setIsSimulating] = React.useState(false);
   const { triggerFlightToSafety } = useEdictRebalance();
 
-  // Wallet guard — only ALLOWED_ADDRESS can simulate
   const { address } = useAccount();
-  const isAllowed = address?.toLowerCase() === ALLOWED_ADDRESS;
+  const isConnected = !!address;
 
   // Pull real on-chain TVL for USDC vault
   const { data: onChainTvl } = useReadContract({
@@ -168,9 +166,9 @@ export function SimulationEngine() {
           evacuation protocol.
         </p>
 
-        <div title={!isAllowed ? "This address is not granted access to simulate CVA failure" : undefined}>
+        <div title={!isConnected ? "Connect your wallet to simulate CVA failure" : undefined}>
           <Button
-            disabled={isSimulating || !isAllowed}
+            disabled={isSimulating || !isConnected}
             onClick={injectRandomViolation}
             className="w-full bg-foreground hover:bg-foreground/90 text-background rounded-full h-12 font-medium shadow-sm transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >

@@ -70,9 +70,9 @@ export default function GovernancePage() {
       return;
     }
 
-    // 1. Net Position Check ($10,000 minimum)
-    if (netPositionUsd < 10000) {
-      toast.error("Voting Restricted: A minimum net position of $10,000 is required to vote.");
+    // 1. Net Position Check (active position required)
+    if (netPositionUsd <= 0) {
+      toast.error("Voting Restricted: An active vault position is required to vote.");
       return;
     }
 

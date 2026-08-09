@@ -42,8 +42,8 @@ contract EdictProxyVault is AccessControl {
 
     // Protocol addresses
     address public aaveV3Pool;
-    address public morphoBlue; // Placeholder
-    address public moonwell; // Placeholder
+    address public morphoBlue;
+    address public moonwell;
     
     // The testnet USDC token address on Base Sepolia
     IERC20 public usdc;
