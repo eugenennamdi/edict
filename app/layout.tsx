@@ -59,6 +59,7 @@ export const metadata: Metadata = {
 
 import { Providers } from "@/components/providers";
 import { Toaster } from "@/components/ui/sonner";
+import { Monitor } from "lucide-react";
 
 export default function RootLayout({
   children,
@@ -69,10 +70,30 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className={cn(geist.variable, geistHeading.variable, geistMono.variable)}>
       <body className="font-sans antialiased min-h-[100dvh] flex flex-col bg-background text-foreground transition-colors duration-300">
         <Providers>
-          <Header />
-          <main className="flex-grow w-full">
-            {children}
-          </main>
+          {/* Mobile Blocker Screen */}
+          <div className="block md:hidden fixed inset-0 z-[100] bg-background flex flex-col items-center justify-center p-6 text-center">
+            <div className="max-w-sm mx-auto flex flex-col items-center gap-5 p-8 rounded-[2rem] border border-black/10 dark:border-white/10 bg-card shadow-2xl">
+              <div className="w-14 h-14 rounded-2xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex items-center justify-center text-foreground">
+                <Monitor className="w-7 h-7 opacity-80" strokeWidth={1.5} />
+              </div>
+              <div className="space-y-2">
+                <h1 className="text-xl font-semibold tracking-tight text-foreground">
+                  Desktop Environment Required
+                </h1>
+                <p className="text-sm text-muted-foreground leading-relaxed font-sans">
+                  Please access this application on a desktop browser to continue.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Desktop Application View */}
+          <div className="hidden md:flex md:flex-col md:min-h-[100dvh] w-full">
+            <Header />
+            <main className="flex-grow w-full">
+              {children}
+            </main>
+          </div>
           <Toaster />
         </Providers>
       </body>
