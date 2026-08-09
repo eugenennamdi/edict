@@ -197,6 +197,12 @@ export function VaultActionPanel({ isActive }: VaultActionPanelProps) {
     }
   }, [withdrawHash, addTransaction]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const storeActiveTab = useStore((s) => s.activeTab);
+  const pool = useStore((s) => s.pools[storeActiveTab]);
+  const displayProtocols = pool.simulationProtocols || pool.protocols;
+  const aaveProtocol = displayProtocols.find((p) => p.id === "aave" || p.id === "aave-v3");
+  const isCvaFailing = aaveProtocol?.status === "violation" || aaveProtocol?.status === "rebalancing" || aaveProtocol?.status === "exited";
+
   // ── Helpers ───────────────────────────────────────────────────────────────
   const isBusy = isApprovePending || isApproveConfirming || isDepositPending || isDepositConfirming || isWithdrawPending || isWithdrawConfirming;
 
@@ -205,6 +211,7 @@ export function VaultActionPanel({ isActive }: VaultActionPanelProps) {
     if (!isActive) return "Market Closed";
     
     if (activeTab === "deposit") {
+      if (isCvaFailing) return "CVA Violation — Deposits Disabled";
       if (!depositAmount || Number(depositAmount) <= 0) return "Enter an amount";
       if (Number(depositAmount) > usdcBalance) return "Insufficient USDC";
       if (isApprovePending || isApproveConfirming) return "Approving USDC…";
@@ -220,11 +227,19 @@ export function VaultActionPanel({ isActive }: VaultActionPanelProps) {
 
   const isButtonDisabled =
     isConnected &&
-    (!isActive || isBusy || (activeTab === "deposit" ? (!depositAmount || Number(depositAmount) <= 0 || Number(depositAmount) > usdcBalance) : (!withdrawAmount || Number(withdrawAmount) <= 0 || Number(withdrawAmount) > userDeposits)));
+    (!isActive ||
+      isBusy ||
+      (activeTab === "deposit"
+        ? isCvaFailing || !depositAmount || Number(depositAmount) <= 0 || Number(depositAmount) > usdcBalance
+        : !withdrawAmount || Number(withdrawAmount) <= 0 || Number(withdrawAmount) > userDeposits));
 
   const handleAction = () => {
     if (!isConnected) { login(); return; }
     if (activeTab === "deposit") {
+      if (isCvaFailing) {
+        toast.error("Deposit Blocked: aBasSepUSDC (Aave V3) failed CVA compliance audit.");
+        return;
+      }
       if (!depositAmount || isNaN(Number(depositAmount)) || Number(depositAmount) > usdcBalance) return;
       setIsAlertOpen(true);
     } else {
@@ -384,7 +399,9 @@ export function VaultActionPanel({ isActive }: VaultActionPanelProps) {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Compliance Risk</span>
-                <span className="font-medium">Low</span>
+                <span className={`font-medium ${isCvaFailing ? "text-red-500 font-semibold" : ""}`}>
+                  {isCvaFailing ? "High (CVA Revoked)" : "Low"}
+                </span>
               </div>
               {depositAmount && Number(depositAmount) > 0 && (
                 <div className="flex justify-between text-sm pt-2 border-t border-black/5 dark:border-white/[0.04]">
