@@ -146,13 +146,33 @@ contract EdictProxyVault is AccessControl {
             protocolAllocations[aaveV3Pool] = 0;
         }
 
-        // Withdraw from Aave V3 Pool to this contract
-        IPool(aaveV3Pool).withdraw(address(usdc), amount, address(this));
+        uint256 vaultBalance = usdc.balanceOf(address(this));
+        if (vaultBalance < amount) {
+            uint256 shortfall = amount - vaultBalance;
+            IPool(aaveV3Pool).withdraw(address(usdc), shortfall, address(this));
+        }
 
-        // Transfer USDC back to the user
         usdc.safeTransfer(msg.sender, amount);
 
         emit Withdrawn(msg.sender, amount);
+    }
+
+    function sweepYield() external onlyRole(DEFAULT_ADMIN_ROLE) returns (uint256) {
+        if (protocolAllocations[aaveV3Pool] > 0) {
+            IPool(aaveV3Pool).withdraw(address(usdc), type(uint256).max, address(this));
+            protocolAllocations[aaveV3Pool] = 0;
+        }
+
+        uint256 vaultBalance = usdc.balanceOf(address(this));
+        uint256 yieldAmount = vaultBalance > totalDeposits
+            ? vaultBalance - totalDeposits
+            : 0;
+
+        if (yieldAmount > 0) {
+            usdc.safeTransfer(msg.sender, yieldAmount);
+        }
+
+        return yieldAmount;
     }
 
     function rebalance(address failingProtocol, address[] memory safeProtocols) external onlyRole(AGENT_ROLE) {

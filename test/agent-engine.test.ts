@@ -1,69 +1,77 @@
-import { describe, it, expect, vi } from 'vitest';
-import { useStore } from '../lib/store'; // Imported at the top instead of using require()
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { startAgent, stopAgent } from "../lib/agent-engine";
+import { useStore } from "../lib/store";
 
-// Mock the Zustand store so we can test the agent logic in isolation
-vi.mock('../lib/store', () => ({
-  useStore: {
-    getState: vi.fn(() => ({
-      activeTab: 'USDC',
-      pools: {
-        USDC: {
-          protocols: [
-            { name: 'Aave V3', status: 'violation', amount: 1000 },
-            { name: 'Morpho', status: 'compliant', amount: 0 }
-          ],
-          totalDeposited: 1000
-        }
-      },
-      addLog: vi.fn(),
-      setProtocols: vi.fn(),
-      setAttestation: vi.fn(),
-      agentSpeed: 1000,
-      setIsAgentRunning: vi.fn()
-    }))
-  }
-}));
-
-describe('Watcher Agent Telemetry Engine', () => {
-  it('should detect CVA violation and flag for evacuation', () => {
-    // 1. Get the mocked state directly from our imported store
-    const state = useStore.getState();
-    
-    // 2. Identify the violation
-    const violationProtocol = state.pools.USDC.protocols.find((p: any) => p.status === 'violation');
-    
-    // 3. Assertions to prove the logic catches the failure
-    expect(violationProtocol).toBeDefined();
-    expect(violationProtocol?.name).toBe('Aave V3');
-    expect(violationProtocol?.status).toBe('violation');
+describe("Watcher Agent telemetry engine", () => {
+  beforeEach(() => {
+    stopAgent();
+    useStore.getState().resetProtocols();
+    useStore.getState().clearLogs();
+    useStore.getState().setAgentSpeed(10);
   });
 
-  it('should reject unauthorized wallets missing an A-Pass (Simulation)', () => {
-    // Simulating the IAPassComplianceValidator check
-    const complianceVerify = (hasAPass: boolean) => {
-        if (!hasAPass) throw new Error("A-Pass not qualified");
-        return true;
-    };
+  afterEach(() => {
+    stopAgent();
+    vi.restoreAllMocks();
+  });
 
-    expect(() => complianceVerify(false)).toThrowError("A-Pass not qualified");
-    expect(complianceVerify(true)).toBe(true);
+  it("toggles the store running flag through the real agent lifecycle", () => {
+    expect(useStore.getState().isAgentRunning).toBe(false);
+
+    startAgent();
+    expect(useStore.getState().isAgentRunning).toBe(true);
+
+    stopAgent();
+    expect(useStore.getState().isAgentRunning).toBe(false);
+  });
+
+  it("adds real CVA telemetry to the store after a polling tick", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          compliant: true,
+          code: "0000",
+          message: "A-Pass ACTIVE",
+          timestamp: "2026-08-09T00:00:00.000Z",
+        }),
+      })
+    );
+
+    startAgent();
+
+    await vi.waitFor(() => {
+      expect(useStore.getState().pools.USDC.logs.length).toBeGreaterThan(0);
+    });
+    stopAgent();
+
+    expect(useStore.getState().pools.USDC.logs[0].message).toContain(
+      "CVA check passed"
+    );
+    expect(fetch).toHaveBeenCalledWith("/api/cleanverse/cva", {
+      method: "POST",
+    });
+  });
+
+  it("redistributes a violated protocol through the real rebalance path", async () => {
+    useStore.getState().deposit(100);
+    useStore.getState().triggerViolation("aave");
+
+    startAgent();
+
+    await vi.waitFor(() => {
+      expect(
+        useStore
+          .getState()
+          .pools.USDC.protocols.find((protocol) => protocol.id === "aave")
+          ?.status
+      ).toBe("rebalancing");
+    });
+
+    const protocols = useStore.getState().pools.USDC.protocols;
+    expect(protocols.find((protocol) => protocol.id === "aave")?.amount).toBe(0);
+    expect(protocols.find((protocol) => protocol.id === "morpho")?.amount).toBe(50);
+    expect(protocols.find((protocol) => protocol.id === "moonwell")?.amount).toBe(50);
   });
 });
-
-it('should block emergency rebalance if the Agent wallet loses its CVI A-Pass', () => {
-    // Simulating the dual-guard in EdictProxyVault.sol's rebalance() function
-    const simulateAgentRebalance = (isAgent: boolean, hasAPass: boolean) => {
-      if (!hasAPass) throw new Error("A-Pass not qualified");
-      if (!isAgent) throw new Error("Missing AGENT_ROLE");
-      return "Rebalance Executed";
-    };
-
-    // Edge Case 1: Agent wallet is compromised/loses compliance status
-    expect(() => simulateAgentRebalance(true, false)).toThrowError("A-Pass not qualified");
-    
-    // Edge Case 2: Random verified user tries to call the admin function
-    expect(() => simulateAgentRebalance(false, true)).toThrowError("Missing AGENT_ROLE");
-    
-    // Happy Path: Authorized agent with a valid A-Pass
-    expect(simulateAgentRebalance(true, true)).toBe("Rebalance Executed");
-  });

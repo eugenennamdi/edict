@@ -6,7 +6,7 @@ export const PROTOCOLS = [
 
 
 export const LOG_TEMPLATES = {
-  compliant: (name: string, apy: string) => `[Watcher Agent]: CVA check passed for aBasSepUSDC Aave V3 | Compliance: 100% | APY: 1.46%`,
+  compliant: (name: string, apy: string) => `[Watcher Agent]: CVA check passed for aBasSepUSDC ${name} | Compliance: 100% | APY: ${apy}%`,
   violation: (name: string) => `[EMERGENCY EJECT]: CVA Failure detected on ${name}. Executing autonomous rebalance...`,
   action: (msg: string) => msg,
   success: (msg: string) => msg,

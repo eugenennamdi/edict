@@ -3,13 +3,29 @@ import { LOG_TEMPLATES } from "./constants";
 import { formatCurrency } from "./utils";
 
 let intervalId: NodeJS.Timeout | null = null;
-let tickCount = 0;
+
+async function pollCva(addLog: (entry: { level: "info" | "violation"; message: string }) => void) {
+  try {
+    const response = await fetch("/api/cleanverse/cva", { method: "POST" });
+    const result = await response.json();
+    const compliant = result.compliant === true;
+
+    addLog({
+      level: compliant ? "info" : "violation",
+      message: `[Watcher Agent]: CVA check ${compliant ? "passed" : "failed"} | ${result.message} | code: ${result.code} | timestamp: ${result.timestamp}`,
+    });
+  } catch (error) {
+    addLog({
+      level: "violation",
+      message: `[Watcher Agent]: CVA check failed | ${error instanceof Error ? error.message : "Request error"}`,
+    });
+  }
+}
 
 export function startAgent() {
   if (intervalId) return;
 
   const tick = () => {
-    tickCount++;
     const state = useStore.getState();
     const activeTab = state.activeTab;
     const activePool = state.pools[activeTab];
@@ -87,17 +103,10 @@ export function startAgent() {
       return;
     }
 
-    // Normal compliance tick (log one random compliant protocol per tick to keep feed alive)
+    // Normal compliance tick: record the real Cleanverse response.
     const compliantProtocols = protocols.filter(p => p.status === "compliant");
     if (compliantProtocols.length > 0) {
-      if (tickCount % 4 === 0) {
-        addLog({ level: "info", message: `[Watcher Agent]: CVA check passed for aBasSepUSDC Aave V3 | Compliance: 100% | APY: 1.46%` });
-        addLog({ level: "info", message: `[Watcher Agent]: CVA check passed for aBasSepUSDC Aave V3 | Compliance: 100% | APY: 1.46%` });
-      } else {
-        const randomP = compliantProtocols[Math.floor(Math.random() * compliantProtocols.length)];
-        const fakeApy = (Math.random() * 2 + 3.5).toFixed(1);
-        addLog({ level: "info", message: LOG_TEMPLATES.compliant(randomP.name, fakeApy) });
-      }
+      void pollCva(addLog);
     }
   };
 
