@@ -5,9 +5,9 @@ import { useStore } from '../lib/store'; // Imported at the top instead of using
 vi.mock('../lib/store', () => ({
   useStore: {
     getState: vi.fn(() => ({
-      activeTab: 'vaults',
+      activeTab: 'USDC',
       pools: {
-        vaults: {
+        USDC: {
           protocols: [
             { name: 'Aave V3', status: 'violation', amount: 1000 },
             { name: 'Morpho', status: 'compliant', amount: 0 }
@@ -30,12 +30,12 @@ describe('Watcher Agent Telemetry Engine', () => {
     const state = useStore.getState();
     
     // 2. Identify the violation
-    const violationProtocol = state.pools.vaults.protocols.find((p: any) => p.status === 'violation');
+    const violationProtocol = state.pools.USDC.protocols.find((p: any) => p.status === 'violation');
     
     // 3. Assertions to prove the logic catches the failure
     expect(violationProtocol).toBeDefined();
-    expect(violationProtocol.name).toBe('Aave V3');
-    expect(violationProtocol.status).toBe('violation');
+    expect(violationProtocol?.name).toBe('Aave V3');
+    expect(violationProtocol?.status).toBe('violation');
   });
 
   it('should reject unauthorized wallets missing an A-Pass (Simulation)', () => {

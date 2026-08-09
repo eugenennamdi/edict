@@ -22,8 +22,39 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Edict | Elite Compliance OS",
-  description: "Autonomous Compliance Operating System for Onchain Finance",
+  metadataBase: new URL("https://edict.finance"),
+  title: "Edict: Autonomous Compliance OS for Onchain Finance",
+  description: "The autonomous compliance operating system for onchain finance.",
+  icons: {
+    icon: [
+      { url: "/icon.png" },
+      { url: "/logo-final.png", type: "image/png" },
+    ],
+    shortcut: "/icon.png",
+    apple: "/icon.png",
+  },
+  openGraph: {
+    title: "Edict: Autonomous Compliance OS for Onchain Finance",
+    description: "The autonomous compliance operating system for onchain finance.",
+    url: "https://edict.finance",
+    siteName: "Edict",
+    images: [
+      {
+        url: "/logo.png",
+        width: 1200,
+        height: 630,
+        alt: "Edict - Autonomous Compliance OS for Onchain Finance",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Edict: Autonomous Compliance OS for Onchain Finance",
+    description: "The autonomous compliance operating system for onchain finance.",
+    images: ["/logo.png"],
+  },
 };
 
 import { Providers } from "@/components/providers";
